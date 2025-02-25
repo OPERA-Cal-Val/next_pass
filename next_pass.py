@@ -2,11 +2,11 @@
 import argparse
 import logging
 from datetime import datetime
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Dict
 
 import asf_search as asf
 import geopandas as gpd
-from shapely.geometry import Point, Polygon, shape
+from shapely.geometry import Point, Polygon, shape, box
 from tabulate import tabulate
 
 from landsat_pass import next_landsat_pass
@@ -85,7 +85,7 @@ def find_valid_insar_collects(
     ]
 
 
-def find_valid_collect(
+def find_valid_collect_point(
     gdf: gpd.GeoDataFrame, footprint: Union[Polygon, Point], mode=None
 ) -> Tuple[bool, Optional[datetime]]:
     """Find valid collects intersecting a footprint."""
@@ -93,27 +93,50 @@ def find_valid_collect(
 
     if not gdf.empty:
         gdf = gdf.sort_values("begin_date", ascending=True).reset_index(drop=True)
-        return True, gdf["begin_date"].tolist(), gdf["orbit_relative"].tolist()
+        #return True, gdf["begin_date"].iloc[0]
+        return True, gdf["begin_date"].tolist(), gdf["orbit_relative"].tolist(), gdf["geometry"].tolist()
+    return False, None
+
+def find_valid_collect_box(
+    gdf: gpd.GeoDataFrame, footprint: Union[Polygon, Polygon], mode=None
+) -> Tuple[bool, Optional[datetime]]:
+    """Find valid collects intersecting a footprint."""
+    gdf = gdf.loc[gdf["geometry"].intersects(footprint)].copy()
+
+    if not gdf.empty:
+        gdf = gdf.sort_values("begin_date", ascending=True).reset_index(drop=True)
+        #return True, gdf["begin_date"].iloc[0]
+        return True, gdf["begin_date"].tolist(), gdf["orbit_relative"].tolist(), gdf["geometry"].tolist()
     return False, None
 
 
 def get_next_collect(
-    point: Point, collection_dataset: gpd.GeoDataFrame, mode: Optional[str] = None
-) -> str:
+    lat_min: float, lat_max: float,lon_min: float,lon_max: float, collection_dataset: gpd.GeoDataFrame, mode: Optional[str] = None
+) -> Dict[str, Union[str, Polygon, Point]]:
     """Get the next collect for a given point and optional mode."""
     if mode:
-        collection_dataset = collection_dataset.loc[
-            collection_dataset["mode"] == mode
-        ].copy()
+        collection_dataset = collection_dataset.loc[collection_dataset["mode"] == mode].copy()
         mode_msg = f" {mode} "
     else:
         mode_msg = " "
+    if lat_min == lat_max and lon_min == lon_max:
+        point = Point(lon_min, lat_min)
+        collect_scheduled, next_collect, next_collect_orbit, next_collect_geometry  = find_valid_collect_point(collection_dataset, point)
+    else:
+        west_longitude = lon_min
+        south_latitude = lat_min
+        east_longitude = lon_max
+        north_latitude = lat_max
+        bounding_box = box(west_longitude, south_latitude, east_longitude, north_latitude)
+        collect_scheduled, next_collect, next_collect_orbit, next_collect_geometry  = find_valid_collect_box(collection_dataset, bounding_box)
 
-    collect_scheduled, next_collect, next_collect_orbit = find_valid_collect(
-        collection_dataset, point
-    )
     if collect_scheduled:
-        return format_collection_outputs(next_collect, next_collect_orbit)
+        #return f"Next{mode_msg}collect is {next_collect[0].strftime('%Y-%m-%d %H:%M:%S')}"
+        #return f"Next{mode_msg} collect is: " + ", ".join(dt.strftime('%Y-%m-%d %H:%M:%S') for dt in next_collect)
+        return {
+            "next_collect_info": format_collection_outputs(next_collect, next_collect_orbit),
+            "next_collect_geometry": next_collect_geometry  # Returning the geometry
+        }
     max_date = collection_dataset["end_date"].max().date()
     return f"No{mode_msg}collect is scheduled on or before {max_date}"
 
@@ -123,29 +146,38 @@ def find_next_sentinel1_overpass(
 ) -> str:
     """Find the next interferometric collect for Sentinel-1."""
     footprint, mode, orbit_relative = get_granule_info(granule)
-    valid_insar_collects = find_valid_insar_collects(
-        collection_dataset, mode, orbit_relative
-    )
+    valid_insar_collects = find_valid_insar_collects(collection_dataset, mode, orbit_relative)
     return get_next_collect(footprint, valid_insar_collects)
 
-
 def find_next_sentinel2_overpass(
-    latitude: float, longitude: float, collection_dataset: gpd.GeoDataFrame
-) -> str:
+    lat_min: float, lat_max: float,lon_min: float,lon_max: float, collection_dataset: gpd.GeoDataFrame
+) -> Dict[str, Union[str, Polygon, Point]]:
     """Find the next overpass for Sentinel-2 using its acquisition plans."""
-    point = Point(longitude, latitude)
-    collect_scheduled, next_collect, next_collect_orbit = find_valid_collect(
-        collection_dataset, point
-    )
+    if lat_min == lat_max and lon_min == lon_max:
+        point = Point(lon_min, lat_min)
+        collect_scheduled, next_collect, next_collect_orbit, next_collect_geometry  = find_valid_collect_point(collection_dataset, point)
+    else:
+        west_longitude = lon_min
+        south_latitude = lat_min
+        east_longitude = lon_max
+        north_latitude = lat_max
+        bounding_box = box(west_longitude, south_latitude, east_longitude, north_latitude)
+        collect_scheduled, next_collect, next_collect_orbit, next_collect_geometry  = find_valid_collect_box(collection_dataset, bounding_box)
+
     if collect_scheduled:
-        return format_collection_outputs(next_collect, next_collect_orbit)
+        #return f"Next Sentinel-2 collect is {next_collect.strftime('%Y-%m-%d %H:%M:%S')}"
+        #return f"Next collect is: " + ", ".join(dt.strftime('%Y-%m-%d %H:%M:%S') for dt in next_collect)
+        return {
+            "next_collect_info": format_collection_outputs(next_collect, next_collect_orbit),
+            "next_collect_geometry": next_collect_geometry  # Returning the geometry
+        }
     max_date = collection_dataset["end_date"].max().date()
     return f"No Sentinel-2 collect is scheduled on or before {max_date}"
 
 
 def find_next_overpass(
-    latitude: float, longitude: float, satellite: str, granule: Optional[str] = None
-) -> str:
+    lat_min: float,lat_max: float, long_min: float, long_max: float,satellite: str, granule: Optional[str] = None
+) -> Dict[str, Union[str, Polygon, Point]]:
     """Find the next overpass for the given satellite and location."""
     if satellite == "sentinel-1":
         LOGGER.info("Processing Sentinel-1 data...")
@@ -153,18 +185,18 @@ def find_next_overpass(
         gdf = gpd.read_file(collection_path)
         if granule:
             return find_next_sentinel1_overpass(granule, gdf)
-        point = Point(longitude, latitude)
-        return get_next_collect(point, gdf)
+        #point = Point(longitude_min, latitude_min)
+        return get_next_collect(lat_min,lat_max,long_min,long_max, gdf)
 
     if satellite == "sentinel-2":
         LOGGER.info("Processing Sentinel-2 data...")
         collection_path = create_s2_collection_plan()
         gdf = gpd.read_file(collection_path)
-        return find_next_sentinel2_overpass(latitude, longitude, gdf)
+        return find_next_sentinel2_overpass(lat_min,lat_max,long_min,long_max,gdf)
 
     if satellite == "landsat":
         LOGGER.info("Fetching Landsat overpass information...")
-        return next_landsat_pass(latitude, longitude)
+        return next_landsat_pass(lat_min, long_min)
 
     LOGGER.error("Unsupported satellite: %s", satellite)
     return "Unsupported satellite."
