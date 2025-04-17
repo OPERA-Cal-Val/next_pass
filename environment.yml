@@ -7,3 +7,10 @@ dependencies:
   - geopandas
   - lxml
   - tabulate
+  - geopy
+  - earthaccess
+  - leafmap
+  - watermark
+  - boto3
+  - rasterio
+  - xarray 
