@@ -12,3 +12,4 @@ dependencies:
   - lxml
   - rasterio
   - tabulate
+  - csv

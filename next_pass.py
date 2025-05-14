@@ -12,6 +12,11 @@ from sentinel_pass import (
     create_s2_collection_plan,
 )
 from utils import bbox_type, create_polygon_from_kml
+from opera_products import (
+    find_print_available_opera_products,
+    generate_opera_map,
+    make_opera_granule_map,
+)
 
 LOGGER = logging.getLogger("next_pass")
 
@@ -50,6 +55,13 @@ def create_parser() -> argparse.ArgumentParser:
         default="all",
         choices=["sentinel-1", "sentinel-2", "landsat", "all"],
         help="Satellite mission. Default is all.",
+    )
+    parser.add_argument(
+        "-n",
+        "--ngr",
+        default=5,
+        type =int,
+        help="Number of mots recent granules to consider for OPERA products",
     )
     parser.add_argument(
         "-l",
@@ -134,6 +146,10 @@ def main():
         # Case: only one satellite selected
         print(result.get("next_collect_info", "No collection info available."))
 
+    # search for & print OPERA results
+    results_opera = find_print_available_opera_products(args)
+    generate_opera_map(results_opera, args)
+    make_opera_granule_map(results_opera, args)
 
 if __name__ == "__main__":
     main()
