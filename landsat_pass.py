@@ -4,6 +4,7 @@ from datetime import date, datetime
 import argparse
 import requests
 from tabulate import tabulate
+from utils import arcgis_to_polygon
 
 # Configure logging
 logging.basicConfig(
@@ -20,7 +21,7 @@ JSON_URL = "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json
 
 def ll2pr(lat: float, lon: float, session: requests.Session) -> dict:
     """
-    Convert latitude and longitude to Path/Row for ascending and descending directions.
+    Convert latitude and longitude to Path/Row and their geometries for ascending and descending directions.
 
     Args:
         lat (float): Latitude.
@@ -28,7 +29,7 @@ def ll2pr(lat: float, lon: float, session: requests.Session) -> dict:
         session (requests.Session): HTTP session object.
 
     Returns:
-        dict: Dictionary with 'ascending' and 'descending' path/row lists.
+        dict: Dictionary with 'ascending' and 'descending' data, including path/row and geometry.
     """
     results = {"ascending": None, "descending": None}
     directions = {"ascending": "A", "descending": "D"}
@@ -39,7 +40,7 @@ def ll2pr(lat: float, lon: float, session: requests.Session) -> dict:
             f"&geometry={lon},{lat}"
             "&geometryType=esriGeometryPoint&spatialRel=esriSpatialRelIntersects"
             "&outFields=PATH,ROW"
-            "&returnGeometry=false&f=json"
+            "&returnGeometry=true&f=json"
         )
 
         try:
@@ -51,15 +52,25 @@ def ll2pr(lat: float, lon: float, session: requests.Session) -> dict:
                 results[direction] = None
                 continue
 
-            paths = [feature["attributes"]["PATH"] for feature in data["features"]]
-            rows = [feature["attributes"]["ROW"] for feature in data["features"]]
-            results[direction] = {"paths": paths, "rows": rows}
+            features = []
+            for feature in data["features"]:
+                attributes = feature["attributes"]
+                geometry = feature.get("geometry")
+                features.append({
+                    "path": attributes["PATH"],
+                    "row": attributes["ROW"],
+                    "geometry": geometry
+                })
+
+            results[direction] = features
 
         except requests.RequestException as error:
-            logging.error(f"Error fetching data for {direction.capitalize()} direction: {error}")
+            logging.error(f"Error fetching data for "
+                          f"{direction.capitalize()} direction: {error}")
             results[direction] = None
 
     return results
+
 
 
 def find_next_landsat_pass(path: int, session: requests.Session, num_passes: int = 5) -> dict:
@@ -119,10 +130,15 @@ def next_landsat_pass(lat: float, lon: float) -> None:
     try:
         results = ll2pr(lat, lon, session=session)
         table_data = []
+        geometry_data = []
 
-        for direction, data in results.items():
-            if data:
-                for path, row in zip(data["paths"], data["rows"]):
+        for direction, features in results.items():
+            if features:
+                for feature in features:
+                    path = feature["path"]
+                    row = feature["row"]
+                    geometry = feature.get("geometry")
+                    polygon = arcgis_to_polygon(geometry)
                     next_pass_dates = find_next_landsat_pass(path, session=session, num_passes=5)
                     for mission, dates in next_pass_dates.items():
                         row_data = [
@@ -133,6 +149,8 @@ def next_landsat_pass(lat: float, lon: float) -> None:
                             ", ".join(dates) if dates else "No future passes found."
                         ]
                         table_data.append(row_data)
+                        if polygon:
+                            geometry_data.append(polygon)
             else:
                 table_data.append(
                     [direction.capitalize(), "N/A", "N/A", "N/A", "No data found."]
@@ -142,7 +160,8 @@ def next_landsat_pass(lat: float, lon: float) -> None:
             table_data,
             headers=["Direction", "Path", "Row", "Mission", "Next Passes"],
             tablefmt="grid"
-            )
+            ),
+            "next_collect_geometry": geometry_data
             }
 
     except Exception as error:

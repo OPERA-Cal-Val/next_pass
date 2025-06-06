@@ -14,9 +14,13 @@ from sentinel_pass import (
 from utils import bbox_type, create_polygon_from_kml
 from opera_products import (
     find_print_available_opera_products,
-    export_opera_products,
-    make_opera_granule_map,
+    export_opera_products
 )
+from plot_maps import (
+    make_opera_granule_map,
+    make_overpasses_map
+)
+
 
 LOGGER = logging.getLogger("next_pass")
 
@@ -65,6 +69,13 @@ def create_parser() -> argparse.ArgumentParser:
         help="Number of most recent dates to consider for OPERA products",
     )
     parser.add_argument(
+        "-d",
+        "--event-date",
+        default="today",
+        type=str,
+        help="Date of the event to consider for OPERA products",
+    )
+    parser.add_argument(
         "-l",
         "--log_level",
         default="info",
@@ -101,23 +112,29 @@ def find_next_overpass(args) -> dict:
         LOGGER.info("Fetching Landsat data...")
         landsat = next_landsat_pass(lat_min, lon_min)
 
-        return {
+    if args.sat == "sentinel-1":
+        LOGGER.info("Fetching Sentinel-1 data...")
+        sentinel1 = next_sentinel_pass(create_s1_collection_plan, geometry)
+        sentinel2 = []
+        landsat = []
+
+    if args.sat == "sentinel-2":
+        LOGGER.info("Fetching Sentinel-2 data...")
+        sentinel2 = next_sentinel_pass(create_s2_collection_plan, geometry)
+        sentinel1 = []
+        landsat =[]
+
+    if args.sat == "landsat":
+        LOGGER.info("Fetching Landsat data...")
+        landsat = next_landsat_pass(lat_min, lon_min)
+        sentinel1 = []
+        sentinel2 = []
+
+    return {
             "sentinel-1": sentinel1,
             "sentinel-2": sentinel2,
             "landsat": landsat,
         }
-
-    if args.sat == "sentinel-1":
-        LOGGER.info("Fetching Sentinel-1 data...")
-        return next_sentinel_pass(create_s1_collection_plan, geometry)
-
-    if args.sat == "sentinel-2":
-        LOGGER.info("Fetching Sentinel-2 data...")
-        return next_sentinel_pass(create_s2_collection_plan, geometry)
-
-    if args.sat == "landsat":
-        LOGGER.info("Fetching Landsat data...")
-        return next_landsat_pass(lat_min, lon_min)
 
     raise ValueError(
         "Satellite not recognized. "
@@ -135,21 +152,22 @@ def main():
     )
 
     result = find_next_overpass(args)
-
-    if isinstance(result, dict) and "sentinel-1" in result:
-        # Case: satellite == all
-        for mission, mission_result in result.items():
+    result_s1 = result["sentinel-1"] 
+    result_s2 = result["sentinel-2"]
+    result_l = result["landsat"]
+    make_overpasses_map(result_s1, result_s2, result_l, args.bbox)
+    
+    # loop over results and display only missions that were requested
+    for mission, mission_result in result.items():
+        if mission_result:
             print(f"\n=== {mission.upper()} ===")
             print(mission_result.get("next_collect_info",
-                                     "No collection info available.")
-            )
-    else:
-        # Case: only one satellite selected
-        print(result.get("next_collect_info", "No collection info available."))
+                                     "No collection info available."))
 
     # search for & print OPERA results
     results_opera = find_print_available_opera_products(args.bbox,
-                                                        args.number_of_dates)
+                                                        args.number_of_dates,
+                                                        args.event_date)
     export_opera_products(results_opera)
     make_opera_granule_map(results_opera, args.bbox)
 

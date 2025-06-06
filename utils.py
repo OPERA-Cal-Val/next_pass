@@ -188,3 +188,10 @@ def bbox_type(arg_coords):
             "Provide either 2 or 4 float values "
             "or a path to a valid .kml file."
         )
+    
+def arcgis_to_polygon(geometry):
+    rings = geometry.get("rings")
+    if not rings:
+        return None
+    # Use the first ring as the exterior boundary
+    return Polygon(rings[0])
