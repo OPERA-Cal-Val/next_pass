@@ -2,8 +2,11 @@
 
 import argparse
 import logging
-
+import sys
 from shapely.geometry import Point, box
+from pathlib import Path
+from datetime import datetime
+from utils import Tee  
 
 from landsat_pass import next_landsat_pass
 from sentinel_pass import (
@@ -76,6 +79,13 @@ def create_parser() -> argparse.ArgumentParser:
         help="Date of the event to consider for OPERA products",
     )
     parser.add_argument(
+        "-f",
+        "--functionality",
+        default="both",
+        type=str,
+        help="functionality of next_pass to run : overpasses or opera_search or both",
+    )
+    parser.add_argument(
         "-l",
         "--log_level",
         default="info",
@@ -141,6 +151,11 @@ def find_next_overpass(args) -> dict:
         "Supported values: sentinel-1, sentinel-2, landsat, all."
     )
 
+def format_arg(bbox_arg):
+    if isinstance(bbox_arg, list) and all(isinstance(x, str) for x in bbox_arg) and len(bbox_arg) in [1, 2, 4]:
+        return " ".join(bbox_arg)
+    else:
+        raise ValueError("Argument must be a list of 1, 2, or 4 strings.")
 
 def main():
     """Main entry point."""
@@ -151,25 +166,39 @@ def main():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    result = find_next_overpass(args)
-    result_s1 = result["sentinel-1"] 
-    result_s2 = result["sentinel-2"]
-    result_l = result["landsat"]
-    make_overpasses_map(result_s1, result_s2, result_l, args.bbox)
-    
-    # loop over results and display only missions that were requested
-    for mission, mission_result in result.items():
-        if mission_result:
-            print(f"\n=== {mission.upper()} ===")
-            print(mission_result.get("next_collect_info",
-                                     "No collection info available."))
+    # Create a timestamp string
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # search for & print OPERA results
-    results_opera = find_print_available_opera_products(args.bbox,
-                                                        args.number_of_dates,
-                                                        args.event_date)
-    export_opera_products(results_opera)
-    make_opera_granule_map(results_opera, args.bbox)
+    # Create the output directory
+    timestamp_dir = Path(f"nextpass_outputs_{timestamp}")
+    timestamp_dir.mkdir(parents=True, exist_ok=True)
+    log_file = timestamp_dir / "run_output.txt"
+    log = open(log_file, "w")
+    sys.stdout = sys.stderr = Tee(sys.__stdout__, log)
+    print(f"Log file created: {log_file}")
+    print(f"BBox = {format_arg(args.bbox)}\n")
+
+    if args.functionality in ("both", "overpasses"):
+        result = find_next_overpass(args)
+        result_s1 = result["sentinel-1"] 
+        result_s2 = result["sentinel-2"]
+        result_l = result["landsat"]
+        make_overpasses_map(result_s1, result_s2, result_l, args.bbox, timestamp_dir)
+        # loop over results and display only missions that were requested
+        for mission, mission_result in result.items():
+            if mission_result:
+                print(f"\n=== {mission.upper()} ===")
+                print(mission_result.get("next_collect_info",
+                                         "No collection info available."))
+
+    if args.functionality in ("both", "opera_search"):
+        # search for & print OPERA results
+        results_opera = find_print_available_opera_products(
+                        args.bbox,
+                        args.number_of_dates,
+                        args.event_date)
+        export_opera_products(results_opera, timestamp_dir)
+        make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 
 
 if __name__ == "__main__":

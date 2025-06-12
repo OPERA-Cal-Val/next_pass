@@ -62,12 +62,12 @@ def hsl_distinct_colors_improved(num_colors):
     return colors
 
 
-def make_opera_granule_map(results_dict, bbox):
+def make_opera_granule_map(results_dict, bbox, timestamp_dir):
     """
     Create an interactive map displaying OPERA granules for all datasets
     with download links.
     """
-    output_file = "opera_products_map.html"
+    output_file = timestamp_dir / "opera_products_map.html"
 
     # Parse AOI center for initial map centering
     bbox = bbox_type(bbox)
@@ -209,12 +209,12 @@ def make_opera_granule_map(results_dict, bbox):
     return map_object
 
 
-def make_overpasses_map(result_s1, result_s2, result_l, bbox):
+def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
     """
     Create an interactive map displaying Sentinel
     and Landsat overpasses
     """
-    output_file = "satellite_overpasses_map.html"
+    output_file = timestamp_dir / "satellite_overpasses_map.html"
 
     satellite_results = {
         "Sentinel-1": result_s1,
@@ -254,8 +254,6 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox):
             "fillOpacity": 0.0
         }
     ).add_to(map_object)
-    print('\n ** Visualizing overpasses',
-          'for Sentinel 1/2 and Landsat 8/9 ** \n')
     for sat_name, (info_text, geometry_list) in satellites.items():
         # Clean and split info
         lines = info_text.split("\n")

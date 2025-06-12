@@ -1,10 +1,15 @@
 import logging
 from datetime import date, datetime
-
 import argparse
 import requests
+import json
+import urllib.parse
+from shapely.geometry import Point, Polygon
+from shapely.geometry.base import BaseGeometry
 from tabulate import tabulate
 from utils import arcgis_to_polygon
+
+
 
 # Configure logging
 logging.basicConfig(
@@ -18,27 +23,54 @@ MAP_SERVICE_URL = (
 )
 JSON_URL = "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json/cycles_full.json"
 
-
-def ll2pr(lat: float, lon: float, session: requests.Session) -> dict:
+def shapely_to_esri_json(geometry: BaseGeometry) -> tuple[str, str]:
     """
-    Convert latitude and longitude to Path/Row and their geometries for ascending and descending directions.
+    Convert a Shapely geometry to Esri JSON format and return geometryType.
+    Args:
+        geometry (BaseGeometry): A Shapely Point or Polygon.
+    Returns:
+        tuple: (Esri JSON geometry string, geometry type)
+    """
+    if isinstance(geometry, Point):
+        coords = f"{geometry.x},{geometry.y}"
+        return coords, "esriGeometryPoint"
+
+    elif isinstance(geometry, Polygon):
+        coords = list(geometry.exterior.coords)
+        # Ensure list of [ [lon, lat], ... ]
+        rings = [[[x, y] for x, y in coords]]
+        esri_geom = {
+            "rings": rings,
+            "spatialReference": {"wkid": 4326}
+        }
+        return urllib.parse.quote(json.dumps(esri_geom)), "esriGeometryPolygon"
+
+    else:
+        raise ValueError("Unsupported geometry type. Only Point and Polygon are supported.")
+
+
+def ll2pr(geometry: BaseGeometry, session: requests.Session) -> dict:
+    """
+    Convert a Shapely geometry (Point or Polygon) to Path/Row
+    and their geometries.
 
     Args:
-        lat (float): Latitude.
-        lon (float): Longitude.
+        geometry (BaseGeometry): Shapely Point or Polygon.
         session (requests.Session): HTTP session object.
 
     Returns:
-        dict: Dictionary with 'ascending' and 'descending' data, including path/row and geometry.
+        dict: Dictionary with 'ascending' and 'descending' data.
     """
     results = {"ascending": None, "descending": None}
     directions = {"ascending": "A", "descending": "D"}
 
+    geometry_str, geometry_type = shapely_to_esri_json(geometry)
+
     for direction, mode in directions.items():
         query_url = (
             f"{MAP_SERVICE_URL}query?where=MODE='{mode}'"
-            f"&geometry={lon},{lat}"
-            "&geometryType=esriGeometryPoint&spatialRel=esriSpatialRelIntersects"
+            f"&geometry={geometry_str}"
+            f"&geometryType={geometry_type}&spatialRel=esriSpatialRelIntersects"
             "&outFields=PATH,ROW"
             "&returnGeometry=true&f=json"
         )
@@ -65,12 +97,10 @@ def ll2pr(lat: float, lon: float, session: requests.Session) -> dict:
             results[direction] = features
 
         except requests.RequestException as error:
-            logging.error(f"Error fetching data for "
-                          f"{direction.capitalize()} direction: {error}")
+            logging.error(f"Error fetching data for {direction.capitalize()} direction: {error}")
             results[direction] = None
 
     return results
-
 
 
 def find_next_landsat_pass(path: int, session: requests.Session, num_passes: int = 5) -> dict:
@@ -131,7 +161,7 @@ def next_landsat_pass(lat: float, lon: float, geometryAOI) -> None:
     session = requests.Session()
 
     try:
-        results = ll2pr(lat, lon, session=session)
+        results = ll2pr(geometryAOI, session=session)
         table_data = []
         geometry_data = []
 

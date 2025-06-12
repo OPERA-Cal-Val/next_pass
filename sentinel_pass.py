@@ -69,6 +69,7 @@ def next_sentinel_pass(create_plan_func, geometry) -> dict:
         }
 
     collects = find_intersecting_collects(gdf, geometry)
+    collects = collects.drop_duplicates(subset=["begin_date", "orbit_relative"])
     if not collects.empty:
         return {
             "next_collect_info": format_collects(collects),

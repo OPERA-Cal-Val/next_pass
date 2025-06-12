@@ -17,6 +17,19 @@ from typing import Union
 
 LOGGER = logging.getLogger('acquisition_utils')
 
+class Tee:
+    """Write to multiple streams (e.g., terminal and log file)."""
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, message):
+        for stream in self.streams:
+            stream.write(message)
+            stream.flush()
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
 
 def scrape_esa_download_urls(url: str, class_: str) -> List[str]:
     """Scrape ESA website for KML download URLs."""

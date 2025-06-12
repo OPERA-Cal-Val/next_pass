@@ -109,13 +109,15 @@ def find_print_available_opera_products(
     return results_dict
 
 
-def export_opera_products(results_dict):
+def export_opera_products(results_dict, timestamp_dir):
     # export to csv file
-    output_file = "opera_products_metadata.csv"
+    output_file = timestamp_dir / "opera_products_metadata.csv"
     with open(output_file, "w", newline="", encoding="utf-8") as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(
-            ["Dataset", "Granule ID", "Start Time", "End Time", "Download URL"]
+            ["Dataset", "Granule ID", "Start Time", "End Time", 
+             "Download URL WTR", "Download URL BWTR", "Download URL VEG-DIST-STATUS",
+             "Download URL S1A_30", "Download URL S1A_VV"]
         )
 
         for dataset, data in results_dict.items():
@@ -144,10 +146,29 @@ def export_opera_products(results_dict):
                                     download_url_bwtr = next_url_entry.get("URL", "N/A")
                                     break
                         break 
-                writer.writerow(
-                    [dataset, granule_id, start_time,
-                     end_time, download_url, download_url_bwtr]
-                )
+                
+                urls = {
+                    "veg": "N/A",
+                    "water": "N/A",
+                    "bwater": download_url_bwtr,
+                    "s1a_30": "N/A",
+                    "s1a_vv": "N/A"
+                }
+                keyword_map = {
+                    'VEG-DIST': 'veg',
+                    '_WTR': 'water',
+                    'S1A_30': 's1a_30',
+                    'S1A_VV': 's1a_vv'
+                }
+                for keyword, key in keyword_map.items():
+                    if keyword in download_url:
+                        urls[key] = download_url
+                        break  
+                writer.writerow([
+                    dataset, granule_id, start_time, end_time,
+                    urls["water"], urls["bwater"], urls["veg"],
+                    urls["s1a_30"], urls["s1a_vv"]
+                ])
     LOGGER.info(
         "-> OPERA products metadata successfully saved"
         "to opera_granule_metadata.csv"
