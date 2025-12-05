@@ -4,48 +4,29 @@ import argparse
 import logging
 import os
 import sys
-import yagmail
 from datetime import datetime
 from pathlib import Path
-
-from shapely.geometry import Point, box
-
-from landsat_pass import next_landsat_pass
-from opera_products import (export_opera_products,
-                            find_print_available_opera_products)
-from plot_maps import make_opera_granule_map, make_overpasses_map
-from sentinel_pass import next_sentinel_pass
-from utils import (Tee,
-                   bbox_type, create_polygon_from_kml,
-                   valid_drcs_datetime)
-from opera_products import (
-    find_print_available_opera_products,
-    export_opera_products
-)
-from plot_maps import (
-    make_opera_granule_map,
-    make_opera_granule_drcs_map,
-    make_overpasses_map
-)
-
+from typing import Any, List
 
 LOGGER = logging.getLogger("next_pass")
 
 EXAMPLE = """
 EXAMPLE USAGE:
 Point (lat/lon pair):
-  python next_pass.py -b 34.20 -118.17
+  next-pass -b 34.20 -118.17
 
 Bounding Box (SNWE):
-  python next_pass.py -b 34.15 34.25 -118.20 -118.15
+  next-pass -b 34.15 34.25 -118.20 -118.15
 
 KML File:
-  python next_pass.py -b /path/to/file.kml
+  next-pass -b /path/to/file.kml
 """
 
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for CLI inputs."""
+    from utils.utils import valid_drcs_datetime
+
     desc = "Find next satellite overpass date."
     parser = argparse.ArgumentParser(
         description=desc,
@@ -82,7 +63,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--functionality",
         default="both",
         type=str,
-        help="functionality to run : overpasses or opera_search or both",
+        help="Functionality to run: overpasses, opera_search or both",
     )
     parser.add_argument(
         "-n",
@@ -96,7 +77,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--event-date",
         default="today",
         type=str,
-        help="Date (UTC) in format YYYY-MM-dd to consider for OPERA products",
+        help="Date (UTC) in format YYYY-MM-DD to consider for OPERA products",
     )
     parser.add_argument(
         "-p",
@@ -109,8 +90,10 @@ def create_parser() -> argparse.ArgumentParser:
         "-c",
         "--cloudiness",
         action="store_true",
-        help=("Display cloudiness prediction and/or history \
-              for future and past overpasses, respectively "),
+        help=(
+            "Display cloudiness prediction and/or history for future and "
+            "past overpasses, respectively"
+        ),
     )
     parser.add_argument(
         "-l",
@@ -129,24 +112,29 @@ def create_parser() -> argparse.ArgumentParser:
         "--generate-drcs-html",
         type=valid_drcs_datetime,
         metavar="YYYY-MM-DDTHH:MM",
-        help=("Generate DRCS HTML file using a UTC event date "
-              " in format YYYY-MM-DDTHH:MM")
+        help=(
+            "Generate DRCS HTML file using a UTC event date "
+            "in format YYYY-MM-DDTHH:MM"
+        ),
     )
     return parser
 
 
-def find_next_overpass(args) -> dict:
+def find_next_overpass(args: argparse.Namespace) -> dict:
     """Main logic for finding the next satellite overpasses."""
+    from shapely.geometry import Point, box
+
+    from utils.landsat_pass import next_landsat_pass
+    from utils.sentinel_pass import next_sentinel_pass
+    from utils.utils import bbox_type, create_polygon_from_kml
+
     bbox = bbox_type(args.bbox)
     n_day_past = args.look_back
 
-    if args.cloudiness:
-        pred_cloudiness = 1
-    else:
-        pred_cloudiness = 0
+    pred_cloudiness = bool(args.cloudiness)
 
     if isinstance(bbox, str):
-        # create geometry for Sentinel-1 and 2 and point (centroid) for Landsat
+        # Create geometry for Sentinel-1 and 2 and point (centroid) for Landsat
         geometry = create_polygon_from_kml(bbox)
         centroid = geometry.centroid
         lat_min = centroid.y
@@ -195,10 +183,11 @@ def find_next_overpass(args) -> dict:
         sentinel2 = []
 
     else:
-        raise ValueError(
+        msg = (
             "Satellite not recognized. "
             "Supported values: sentinel-1, sentinel-2, landsat, all."
         )
+        raise ValueError(msg)
 
     return {
         "sentinel-1": sentinel1,
@@ -207,53 +196,74 @@ def find_next_overpass(args) -> dict:
     }
 
 
-def format_arg(bbox_arg):
+def format_arg(bbox_arg: Any) -> str:
+    """Pretty-print bbox argument for logs/emails."""
     if (
         isinstance(bbox_arg, list)
         and all(isinstance(x, str) for x in bbox_arg)
-        and len(bbox_arg) in [1, 2, 4]
+        and len(bbox_arg) in (1, 2, 4)
     ):
         return " ".join(bbox_arg)
-    else:
-        raise ValueError("Argument must be a list of 1, 2, or 4 strings.")
+    msg = "Argument must be a list of 1, 2, or 4 strings."
+    raise ValueError(msg)
 
 
-def send_email(subject, body, attachment=None):
+def send_email(subject: str, body: str, attachment: Path | None = None) -> None:
     """
     Send an email with the next_pass information.
-    :param subject: Subject of the email.
-    :param body: Body of the email.
-    :param attachment: Optional attachment file path.
-    """
 
-    GMAIL_USER = "aria.hazards.jpl@gmail.com"
-    GMAIL_PSWD = os.environ["GMAIL_APP_PSWD"]
-    yag = yagmail.SMTP(GMAIL_USER, GMAIL_PSWD)
+    Parameters
+    ----------
+    subject : str
+        Subject of the email.
+    body : str
+        Body of the email.
+    attachment : Path or None
+        Optional attachment file path.
+    """
+    import yagmail
+
+    gmail_user = "aria.hazards.jpl@gmail.com"
+    gmail_pswd = os.environ["GMAIL_APP_PSWD"]
+    yag = yagmail.SMTP(gmail_user, gmail_pswd)
 
     receivers = [
         "cole.speed@jpl.nasa.gov",
         "ines.fenni@jpl.nasa.gov",
         "emre.havazli@jpl.nasa.gov",
     ]
-    yag.send(bcc=receivers, subject=subject,
-             contents=[body], attachments=[attachment])
-    return
+    yag.send(bcc=receivers, subject=subject, contents=[body], attachments=[attachment])
 
 
-def run_next_pass(bbox, number_of_dates=5,
-                  date=None, functionality="opera_search"):
+def run_next_pass(
+    bbox: List[float],
+    number_of_dates: int = 5,
+    date: str | None = None,
+    functionality: str = "opera_search",
+):
     """
     Programmatic entry point for next_pass.
     Wraps main() and builds CLI-style args.
-    Args:
-        bbox (list[float]): [south, north, west, east]
-        number_of_dates (int): Number of recent dates to consider
-        date (str or None): Optional date string (YYYY-MM-DD)
-        functionality (str): Functionality to run: 'overpasses',
-        'opera_search', or 'both'
+
+    Args
+    ----
+    bbox : list[float]
+        [south, north, west, east]
+    number_of_dates : int
+        Number of recent dates to consider.
+    date : str or None
+        Optional date string (YYYY-MM-DD).
+    functionality : str
+        Functionality to run: 'overpasses', 'opera_search', or 'both'.
     """
-    cli_args = ["-b", *map(str, bbox), "-n", str(number_of_dates),
-                "-f", functionality]
+    cli_args = [
+        "-b",
+        *map(str, bbox),
+        "-n",
+        str(number_of_dates),
+        "-f",
+        functionality,
+    ]
 
     if date:
         cli_args += ["-d", date]
@@ -261,8 +271,8 @@ def run_next_pass(bbox, number_of_dates=5,
     return main(cli_args)
 
 
-def main(cli_args=None):
-    """Main entry point."""
+def main(cli_args: Any = None):
+    """Main entry point for the CLI or programmatic use."""
     if isinstance(cli_args, argparse.Namespace):
         args = cli_args
     elif cli_args is None:
@@ -275,61 +285,103 @@ def main(cli_args=None):
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
+    from utils.opera_products import (
+        export_opera_products,
+        find_print_available_opera_products,
+    )
+    from utils.plot_maps import (
+        make_opera_granule_drcs_map,
+        make_opera_granule_map,
+        make_overpasses_map,
+    )
+    from utils.utils import Tee
+
     # Create a timestamp string
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Create the output directory
     timestamp_dir = Path(f"nextpass_outputs_{timestamp}")
     timestamp_dir.mkdir(parents=True, exist_ok=True)
+
     log_file = timestamp_dir / "run_output.txt"
     log = open(log_file, "w", encoding="utf-8")
+
+    # Mirror stdout/stderr to both terminal and log file
     sys.stdout = sys.stderr = Tee(sys.__stdout__, log)
+
     print(f"Log file created: {log_file}")
     print(f"BBox = {format_arg(args.bbox)}\n")
 
+    result_s1 = result_s2 = result_l = None
+    results_opera = None
+
+    # Overpasses functionality
     if args.functionality in ("both", "overpasses"):
         result = find_next_overpass(args)
         result_s1 = result["sentinel-1"]
         result_s2 = result["sentinel-2"]
         result_l = result["landsat"]
-        make_overpasses_map(result_s1, result_s2, result_l,
-                            args.bbox, timestamp_dir)
-        # loop over results and display only missions that were requested
+
+        make_overpasses_map(
+            result_s1,
+            result_s2,
+            result_l,
+            args.bbox,
+            timestamp_dir,
+        )
+
+        # Print only missions that were requested / have results
         for mission, mission_result in result.items():
             if mission_result:
                 print(f"\n=== {mission.upper()} ===")
                 print(
                     mission_result.get(
-                        "next_collect_info", "No collection info available."
+                        "next_collect_info",
+                        "No collection info available.",
                     )
                 )
 
+    # OPERA search functionality
     if args.functionality in ("both", "opera_search"):
-        # search for & print OPERA results
         results_opera = find_print_available_opera_products(
-            args.bbox, args.number_of_dates, args.event_date, args.products
+            args.bbox,
+            args.number_of_dates,
+            args.event_date,
+            args.products,
         )
         export_opera_products(results_opera, timestamp_dir)
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 
-    if args.generate_drcs_html is not None and args.functionality in ("both"):
-        make_opera_granule_drcs_map(args.generate_drcs_html, results_opera,
-                                    result_s1, result_s2, result_l,
-                                    args.bbox, timestamp_dir
-                                    )
+    # DRCS HTML map (requires both overpasses + OPERA)
+    if args.generate_drcs_html is not None and args.functionality in ("both",):
+        make_opera_granule_drcs_map(
+            args.generate_drcs_html,
+            results_opera,
+            result_s1,
+            result_s2,
+            result_l,
+            args.bbox,
+            timestamp_dir,
+        )
 
+    # Optional email
     if args.email:
         overpasses_map = timestamp_dir / "satellite_overpasses_map.html"
-        with open(log_file, "w", encoding="utf-8") as f:
+
+        # Close log so everything is flushed, then read back
+        log.close()
+        with open(log_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
-            email_body = "".join(lines[4:])
-        send_email(
-            f"Next Satellite Overpasses for {
-                args.sat.upper()} as of {
-                    timestamp} UTC for AOI:{format_arg(args.bbox)}",
-            email_body,
-            overpasses_map,
+
+        # Skip the first few lines (log header, bbox line, etc.)
+        email_body = "".join(lines[4:]) if len(lines) > 4 else "".join(lines)
+
+        subject = (
+            f"Next Satellite Overpasses for {args.sat.upper()} as of "
+            f"{timestamp} UTC for AOI: {format_arg(args.bbox)}"
         )
+        send_email(subject, email_body, overpasses_map)
+
         print("=========================================")
         print("Alert emailed to recipients.")
         print("=========================================")

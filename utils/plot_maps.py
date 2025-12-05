@@ -4,6 +4,8 @@ import logging
 import random
 import re
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict
 
 import folium
 import geopandas as gpd
@@ -13,39 +15,35 @@ from jinja2 import Template
 from matplotlib.colors import to_hex
 from shapely.geometry import Polygon, box
 
-from utils import (
+from utils.utils import (
     bbox_type,
     check_opera_overpass_intersection,
     create_polygon_from_kml,
     style_function_factory,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
 LOGGER = logging.getLogger(__name__)
 
 
-def hsl_distinct_colors(n):
-    colors = []
+def hsl_distinct_colors(n: int) -> list[str]:
+    """Generate n distinct colors using HSV → RGB, returned as hex strings."""
+    colors: list[str] = []
     for i in range(n):
         # Generate colors with different hues
         hue = i / float(n)
         color = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
-        # Convert from RGB (0-1) to hex (#RRGGBB)
+        # Convert from RGB (0–1) to hex (#RRGGBB)
         rgb = [int(c * 255) for c in color]
         hex_color = "#{:02x}{:02x}{:02x}".format(*rgb)
         colors.append(hex_color)
     return colors
 
 
-def spread_rgb_colors(n):
-    colors = []
-    # Divide the color space into n parts
-    step = 255 // n
+def spread_rgb_colors(n: int) -> list[str]:
+    """Generate n RGB-based colors spread across the spectrum."""
+    colors: list[str] = []
+    step = 255 // max(n, 1)
     for i in range(n):
-        # Spread out the color values across the RGB spectrum
         r = (i * step) % 256
         g = ((i + 1) * step) % 256
         b = ((i + 2) * step) % 256
@@ -54,22 +52,28 @@ def spread_rgb_colors(n):
     return colors
 
 
-def hsl_distinct_colors_improved(num_colors):
-    colors = []
+def hsl_distinct_colors_improved(num_colors: int) -> list[str]:
+    """Generate visually distinct HSL-based colors with random saturation/lightness."""
+    colors: list[str] = []
     for i in range(num_colors):
         hue = (i * 360 / num_colors) % 360
         saturation = random.randint(60, 80)
         lightness = random.randint(30, 50)
         r, g, b = colorsys.hls_to_rgb(hue / 360, lightness / 100, saturation / 100)
         hex_color = "#{:02x}{:02x}{:02x}".format(
-            int(r * 255), int(g * 255), int(b * 255)
+            int(r * 255),
+            int(g * 255),
+            int(b * 255),
         )
         colors.append(hex_color)
-
     return colors
 
 
-def make_opera_granule_map(results_dict, bbox, timestamp_dir):
+def make_opera_granule_map(
+    results_dict: Dict[str, Dict[str, Any]],
+    bbox: Any,
+    timestamp_dir: Path,
+):
     """
     Create an interactive map displaying OPERA granules for all datasets
     with download links.
@@ -77,41 +81,46 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
     output_file = timestamp_dir / "opera_products_map.html"
 
     # Parse AOI center for initial map centering
-    bbox = bbox_type(bbox)
-    if isinstance(bbox, str):
-        geometry = create_polygon_from_kml(bbox)
-        AOI = geometry.bounds
-        AOI_polygon = geometry
+    bbox_parsed = bbox_type(bbox)
+    if isinstance(bbox_parsed, str):
+        geometry = create_polygon_from_kml(bbox_parsed)
+        aoi = geometry.bounds
+        aoi_polygon = geometry
     else:
-        lat_min, lat_max, lon_min, lon_max = bbox
-        AOI = (lon_min, lat_min, lon_max, lat_max)
-        AOI_polygon = box(*AOI)
+        lat_min, lat_max, lon_min, lon_max = bbox_parsed
+        aoi = (lon_min, lat_min, lon_max, lat_max)
+        aoi_polygon = box(*aoi)
 
-    center_lat = (AOI[1] + AOI[3]) / 2
-    center_lon = (AOI[0] + AOI[2]) / 2
+    center_lat = (aoi[1] + aoi[3]) / 2
+    center_lon = (aoi[0] + aoi[2]) / 2
 
     # Initialize base map
     map_object = folium.Map(location=[center_lat, center_lon], zoom_start=7)
-    # Get AOI bounding box
-    aoi_geojson = gpd.GeoSeries([AOI_polygon]).__geo_interface__
+
+    # AOI bounding box
+    aoi_geojson = gpd.GeoSeries([aoi_polygon]).__geo_interface__
+
     folium.TileLayer("Esri.WorldImagery").add_to(map_object)
+
     # Generate distinct colors for layers
     cmap = plt.get_cmap("tab20")
     dataset_names = list(results_dict.keys())
     colors = [to_hex(cmap(i % 20)) for i in range(len(dataset_names))]
-    legend_entries = []
+    legend_entries: list[tuple[str, str]] = []
 
     for i, (dataset, data) in enumerate(results_dict.items()):
         gdf = data.get("gdf")
         if gdf is None or gdf.empty:
-            LOGGER.info(f"Skipping {dataset}: empty or missing GeoDataFrame.")
+            LOGGER.info("Skipping %s: empty or missing GeoDataFrame.", dataset)
             continue
 
         gdf = gdf.copy()
+
         if i < 4:
             pos_delta = 0.08 * (i - 1)
         else:
             pos_delta = 0.08 * (i - 5)
+
         # Add download URL and name for popup
         for idx, item in enumerate(data["results"]):
             try:
@@ -122,15 +131,15 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
                         download_url = url_entry.get("URL", "N/A")
                         break
                 label = umm.get("GranuleUR", "OPERA Granule")
-
-            except Exception as e:
-                LOGGER.info(f"Unexpected error: {e}")
+            except Exception as e:  # noqa: BLE001
+                LOGGER.info("Unexpected error while parsing UMM: %s", e)
                 download_url = "URL not available"
                 label = "OPERA Granule"
 
             gdf.iloc[idx, gdf.columns.get_loc("URL")] = download_url
             gdf.iloc[idx, gdf.columns.get_loc("GranuleUR")] = label
-        # set the color of the icon and gemetry
+
+        # Set the color of the icon and geometry
         color = colors[i]
         style = {
             "color": color,
@@ -138,15 +147,16 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
             "weight": 2,
             "fillOpacity": 0.5,
         }
-        # Create a FeatureGroup to hold both geometries and markers
+
         feature_group = folium.FeatureGroup(name=dataset)
-        # Add geometries to FeatureGroup
+
+        # Add geometries
         folium.GeoJson(
             gdf.__geo_interface__,
             style_function=lambda x, style=style: style,
         ).add_to(feature_group)
 
-        # Add popup markers to FeatureGroup
+        # Add popup markers
         for _, row in gdf.iterrows():
             centroid = row.geometry.centroid
             popup_html = f"""
@@ -159,23 +169,25 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
                 location=[centroid.y + pos_delta, centroid.x + pos_delta],
                 popup=folium.Popup(popup_html, max_width=400),
                 icon=folium.Icon(
-                    color="lightgray", icon_color=color, icon="cloud-download"
+                    color="lightgray",
+                    icon_color=color,
+                    icon="cloud-download",
                 ),
             ).add_to(feature_group)
 
-        # Add the FeatureGroup to the map
         feature_group.add_to(map_object)
         legend_entries.append((dataset, color))
-    # finish with AOI
+
+    # AOI outline
     folium.GeoJson(
         aoi_geojson,
         name="AOI",
         style_function=lambda x: {"color": "black", "weight": 2, "fillOpacity": 0.0},
     ).add_to(map_object)
-    # Add layer control
+
     folium.LayerControl().add_to(map_object)
 
-    # Add legend
+    # Legend template
     legend_html = """
     {% macro html(this, kwargs) %}
     <div style="position: fixed;
@@ -206,54 +218,63 @@ def make_opera_granule_map(results_dict, bbox, timestamp_dir):
 
     map_object.get_root().add_child(Legend(legend_entries))
 
-    # Save and retrun
     map_object.save(output_file)
-    LOGGER.info(f"-> OPERA granules Map successfully saved to {output_file}")
+    LOGGER.info("-> OPERA granules Map successfully saved to %s", output_file)
     return map_object
 
 
 def make_opera_granule_drcs_map(
-    event_date, results_dict, result_s1, result_s2, result_l, bbox, timestamp_dir
+    event_date: datetime,
+    results_dict: Dict[str, Dict[str, Any]],
+    result_s1: dict | None,
+    result_s2: dict | None,
+    result_l: dict | None,
+    bbox: Any,
+    timestamp_dir: Path,
 ):
     """
-    Create an interactive map displaying OPERA granules for all datasets
-    with download links.
+    Create an interactive map displaying OPERA granules with DRCS logic.
+
+    Shows available granules in color, and for pre-event granules
+    shows overpass info from S1/S2/Landsat.
     """
     output_file = timestamp_dir / "opera_products_drcs_map.html"
-    # Parse AOI center for initial map centering
-    bbox = bbox_type(bbox)
-    if isinstance(bbox, str):
-        geometry = create_polygon_from_kml(bbox)
-        AOI = geometry.bounds
-        AOI_polygon = geometry
+
+    # Parse AOI
+    bbox_parsed = bbox_type(bbox)
+    if isinstance(bbox_parsed, str):
+        geometry = create_polygon_from_kml(bbox_parsed)
+        aoi = geometry.bounds
+        aoi_polygon = geometry
     else:
-        lat_min, lat_max, lon_min, lon_max = bbox
-        AOI = (lon_min, lat_min, lon_max, lat_max)
-        AOI_polygon = box(*AOI)
+        lat_min, lat_max, lon_min, lon_max = bbox_parsed
+        aoi = (lon_min, lat_min, lon_max, lat_max)
+        aoi_polygon = box(*aoi)
 
-    center_lat = (AOI[1] + AOI[3]) / 2
-    center_lon = (AOI[0] + AOI[2]) / 2
+    center_lat = (aoi[1] + aoi[3]) / 2
+    center_lon = (aoi[0] + aoi[2]) / 2
 
-    # Initialize base map
     map_object = folium.Map(location=[center_lat, center_lon], zoom_start=7)
-    # Get AOI bounding box
-    aoi_geojson = gpd.GeoSeries([AOI_polygon]).__geo_interface__
 
+    aoi_geojson = gpd.GeoSeries([aoi_polygon]).__geo_interface__
     folium.TileLayer("Esri.WorldImagery").add_to(map_object)
-    # Generate distinct colors for layers
+
     cmap = plt.get_cmap("tab20")
     dataset_names = list(results_dict.keys())
     colors = [to_hex(cmap(i % 20)) for i in range(len(dataset_names))]
-    legend_entries = []
-    # here we are looping over OPERA products
+    legend_entries: list[tuple[str, str]] = []
+
+    # Loop over OPERA products
     for i, (dataset, data) in enumerate(results_dict.items()):
-        # for now, let us not consider OPERA_L3_DIST-ANN-HLS_V1
+        # Skip ANN at the moment
         if dataset == "OPERA_L3_DIST-ANN-HLS_V1":
             continue
+
         gdf = data.get("gdf")
         if gdf is None or gdf.empty:
-            LOGGER.info(f"Skipping {dataset}: empty or missing GeoDataFrame.")
+            LOGGER.info("Skipping %s: empty or missing GeoDataFrame.", dataset)
             continue
+
         gdf = gdf.copy()
         if i < 4:
             pos_delta = 0.08 * (i - 1)
@@ -262,7 +283,8 @@ def make_opera_granule_drcs_map(
 
         feature_group = folium.FeatureGroup(name=dataset)
         gdf = gdf.reset_index(drop=True)
-        # Add download URL and name for popup
+
+        # Add download URL and name, decorate popups with DRCS logic
         for idx, item in enumerate(data["results"]):
             try:
                 umm = item["umm"]
@@ -274,21 +296,22 @@ def make_opera_granule_drcs_map(
                 label = umm.get("GranuleUR", "OPERA Granule")
 
                 parts = label.split("_")
-                if parts[2] == "DISP-S1":
+                if len(parts) > 2 and parts[2] == "DISP-S1":
                     aqu_date = datetime.strptime(parts[7], "%Y%m%dT%H%M%SZ")
                 else:
                     aqu_date = datetime.strptime(parts[4], "%Y%m%dT%H%M%SZ")
                 aqu_date_utc = aqu_date.replace(tzinfo=timezone.utc)
-
             except Exception as e:
-                LOGGER.info(f"Unexpected error: {e}")
+                LOGGER.info("Unexpected error while parsing UMM/label: %s", e)
                 download_url = "URL not available"
                 label = "OPERA Granule"
+                aqu_date_utc = event_date - timezone.utc.utcoffset(
+                    event_date
+                )  # force pre-event
 
-            # get geometry
             geom = gdf.iloc[idx].geometry
             centroid = geom.centroid
-            # check if granule is post event
+
             condition_ok = aqu_date_utc > event_date
 
             if condition_ok:
@@ -302,10 +325,17 @@ def make_opera_granule_drcs_map(
                 url_value = download_url
                 label_value = label
             else:
-                product_geom = geom.intersection(AOI_polygon)
+                if aoi_polygon.area > 0:
+                    product_geom = geom.intersection(aoi_polygon)
+                else:
+                    product_geom = geom
                 report = check_opera_overpass_intersection(
-                    label, product_geom, result_s1, result_s2, result_l,
-                    event_date
+                    label,
+                    product_geom,
+                    result_s1,
+                    result_s2,
+                    result_l,
+                    event_date,
                 )
                 color = "lightgray"
                 sentences_html = (
@@ -325,7 +355,6 @@ def make_opera_granule_drcs_map(
             gdf.at[idx, "GranuleUR"] = label_value
             gdf.at[idx, "condition_ok"] = condition_ok
 
-            # Add marker with conditional color
             folium.Marker(
                 location=[centroid.y + pos_delta, centroid.x + pos_delta],
                 popup=folium.Popup(popup_html, max_width=800),
@@ -343,21 +372,18 @@ def make_opera_granule_drcs_map(
             name=f"{dataset}_geojson",
         ).add_to(feature_group)
 
-        # Add the FeatureGroup to the map
         feature_group.add_to(map_object)
         legend_entries.append((dataset, colors[i]))
 
-    # Add AOI layer last
+    # AOI layer
     folium.GeoJson(
         aoi_geojson,
         name="AOI",
         style_function=lambda x: {"color": "black", "weight": 2, "fillOpacity": 0.0},
     ).add_to(map_object)
 
-    # Add layer control
     folium.LayerControl().add_to(map_object)
 
-    # Add legend
     legend_html = """
     {% macro html(this, kwargs) %}
     <div style="position: fixed;
@@ -388,16 +414,23 @@ def make_opera_granule_drcs_map(
 
     map_object.get_root().add_child(Legend(legend_entries))
 
-    # Save and retrun
     map_object.save(output_file)
-    LOGGER.info(f"-> DRCS OPERA granules Map successfully saved to {output_file}")
+    LOGGER.info(
+        "-> DRCS OPERA granules Map successfully saved to %s",
+        output_file,
+    )
     return map_object
 
 
-def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
+def make_overpasses_map(
+    result_s1: dict | None,
+    result_s2: dict | None,
+    result_l: dict | None,
+    bbox: Any,
+    timestamp_dir: Path,
+):
     """
-    Create an interactive map displaying Sentinel
-    and Landsat overpasses
+    Create an interactive map displaying Sentinel and Landsat overpasses.
     """
     output_file = timestamp_dir / "satellite_overpasses_map.html"
 
@@ -406,43 +439,45 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
         "Sentinel-2": result_s2,
         "landsat": result_l,
     }
-    satellites = {}
+
+    satellites: dict[str, tuple[str, list | None]] = {}
     for name, result in satellite_results.items():
         if result:
             next_collect_info = result.get(
-                "next_collect_info", "No collection info available"
+                "next_collect_info",
+                "No collection info available",
             )
             next_collect_geometry = result.get("next_collect_geometry", None)
             satellites[name] = (next_collect_info, next_collect_geometry)
 
-    # Parse AOI center for initial map centering
-    bbox = bbox_type(bbox)
-    if isinstance(bbox, str):
-        geometry = create_polygon_from_kml(bbox)
-        AOI = geometry.bounds
-        AOI_polygon = geometry
+    # Parse AOI
+    bbox_parsed = bbox_type(bbox)
+    if isinstance(bbox_parsed, str):
+        geometry = create_polygon_from_kml(bbox_parsed)
+        aoi = geometry.bounds
+        aoi_polygon = geometry
     else:
-        lat_min, lat_max, lon_min, lon_max = bbox
-        AOI = (lon_min, lat_min, lon_max, lat_max)
-        AOI_polygon = box(*AOI)
+        lat_min, lat_max, lon_min, lon_max = bbox_parsed
+        aoi = (lon_min, lat_min, lon_max, lat_max)
+        aoi_polygon = box(*aoi)
 
-    center_lat = (AOI[1] + AOI[3]) / 2
-    center_lon = (AOI[0] + AOI[2]) / 2
-    # Base map
+    center_lat = (aoi[1] + aoi[3]) / 2
+    center_lon = (aoi[0] + aoi[2]) / 2
+
     map_object = folium.Map(location=[center_lat, center_lon], zoom_start=5)
-    # Get AOI bounding box
-    aoi_geojson = gpd.GeoSeries([AOI_polygon]).__geo_interface__
+    aoi_geojson = gpd.GeoSeries([aoi_polygon]).__geo_interface__
+
     for sat_name, (info_text, geometry_list) in satellites.items():
-        # Clean and split info
+        if not geometry_list:
+            continue
+
         lines = info_text.split("\n")
         cleaned_info = [line for line in lines if re.search(r"[1-9]", line)]
         info_list = cleaned_info
         num_polygons = len(geometry_list)
 
-        # Generate distinct colors
         colors = hsl_distinct_colors_improved(num_polygons)
 
-        # Handle Landsat 8/9 ascending/descending with different groups
         if "landsat" in sat_name:
             fg_8_asc = folium.FeatureGroup(name=f"{sat_name} 8 Ascending")
             fg_8_desc = folium.FeatureGroup(name=f"{sat_name} 8 Descending")
@@ -450,10 +485,8 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
             fg_9_desc = folium.FeatureGroup(name=f"{sat_name} 9 Descending")
 
             for i, (polygon, info) in enumerate(zip(geometry_list, info_list)):
-                # Determine satellite number (8 or 9) by index or info
                 sat_num = 8 if i % 2 == 0 else 9
 
-                # Determine ascending or descending from info text
                 if re.search(r"ascending", info, re.IGNORECASE):
                     asc_desc = "Ascending"
                 elif re.search(r"descending", info, re.IGNORECASE):
@@ -461,7 +494,6 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
                 else:
                     asc_desc = "Unknown"
 
-                # Select the correct feature group and color
                 if sat_num == 8 and asc_desc == "Ascending":
                     group = fg_8_asc
                     color = "red"
@@ -490,13 +522,11 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
                     popup=folium.Popup(f"{sat_name}: {info}", max_width=300),
                 ).add_to(group)
 
-            # Add all feature groups to map
             fg_8_asc.add_to(map_object)
             fg_8_desc.add_to(map_object)
             fg_9_asc.add_to(map_object)
             fg_9_desc.add_to(map_object)
         else:
-            # Other satellites (Sentinel etc.)
             fg = folium.FeatureGroup(name=sat_name)
             for i, (polygon, info) in enumerate(zip(geometry_list, info_list), start=1):
                 if isinstance(polygon, Polygon):
@@ -513,14 +543,15 @@ def make_overpasses_map(result_s1, result_s2, result_l, bbox, timestamp_dir):
                         popup=folium.Popup(f"{sat_name}: {info}", max_width=300),
                     ).add_to(fg)
             fg.add_to(map_object)
-    # add AOI layercontrol
+
     folium.GeoJson(
         aoi_geojson,
         name="AOI",
         style_function=lambda x: {"color": "black", "weight": 2, "fillOpacity": 0.0},
     ).add_to(map_object)
-    # Add LayerControl to toggle on/off
+
     folium.LayerControl(collapsed=False).add_to(map_object)
-    # Save and retrun
+
     map_object.save(output_file)
+    LOGGER.info("-> Satellite overpasses map successfully saved to %s", output_file)
     return map_object

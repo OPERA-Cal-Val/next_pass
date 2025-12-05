@@ -20,19 +20,14 @@ Optionally filter by **OPERA product families**, **estimate cloudiness** for the
 
 ```
 next_pass/
-├─ examples/                 # Jupyter notebook(s) and sample runs
-├─ cloudiness.py             # Cloud estimate helpers for S1/S2
-├─ collection_builder.py     # Build search collections
-├─ landsat_pass.py           # Landsat pass utilities
-├─ sentinel_pass.py          # Sentinel-1/2 pass utilities
-├─ opera_products.py         # OPERA product family helpers
-├─ next_pass.py              # CLI entry point
-├─ utils.py                  # Shared helpers (I/O, geometry, etc.)
-├─ plot_maps.py              # Optional map visualization utilities
-├─ environment.yml           # Mamba/conda environment
-├─ requirements.txt          # Alternative dependency list
-├─ pyproject.toml / setup.py # Packaging metadata
-└─ LICENSE                   # Apache-2.0
+├─ examples/          # Jupyter notebooks and sample workflows
+├─ utils/             # Core helpers (Sentinel/Landsat passes, cloudiness, OPERA products, plotting, I/O)
+├─ next_pass.py       # CLI entry point (used by the `next-pass` console script)
+├─ environment.yml    # Conda/mamba environment for development and notebooks
+├─ requirements.txt   # Runtime dependency list (used by pyproject / pip)
+├─ pyproject.toml     # Modern packaging metadata (setuptools backend)
+├─ setup.py           # Legacy shim for older tooling
+└─ LICENSE            # Apache-2.0
 ```
 
 ---
@@ -50,16 +45,25 @@ Create a fresh environment **(recommended)**:
 
 ```bash
 mamba env create -f environment.yml
+mamba activate next_pass
+```
+or with conda
+
+```bash
+conda env create -f environment.yml
 conda activate next_pass
 ```
 
-Or install into an existing environment:
+Alternatively, install the runtime dependencies directly:
 
 ```bash
-mamba install -c conda-forge --yes --file requirements.txt
+conda install -c conda-forge --yes --file requirements.txt
 ```
 
-> Tip: If you prefer `pip`, you can also do `pip install -e .` after activating a suitable environment.
+Install the package (optional but recommended)
+```bash
+pip install -e .
+```
 
 ---
 
@@ -70,19 +74,19 @@ The main entry point is `next_pass.py`. Choose one AOI input form and add option
 ### 1) Point (lat, lon)
 
 ```bash
-python next_pass.py -b 34.20 -118.17
+next_pass.py -b 34.20 -118.17
 ```
 
 ### 2) Bounding box (SNWE = South North West East)
 
 ```bash
-python next_pass.py -b 34.15 34.25 -118.20 -118.15
+next_pass.py -b 34.15 34.25 -118.20 -118.15
 ```
 
 ### 3) KML file (polygon)
 
 ```bash
-python next_pass.py -b /path/to/aoi.kml
+next_pass.py -b /path/to/aoi.kml
 ```
 
 ### Options
@@ -90,32 +94,32 @@ python next_pass.py -b /path/to/aoi.kml
 - **Satellite** subset (e.g., S1 only) and **email** the results:
 
   ```bash
-  python next_pass.py -b 50 52 -102 -100 -s sentinel-1 --email
+  next_pass.py -b 50 52 -102 -100 -s sentinel-1 --email
   ```
 
 - **Restrict OPERA products** considered during the search (space‑separated list):
 
   ```bash
-  python next_pass.py -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1
+  next_pass.py -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1
   ```
 
 - **Predict cloudiness** for the next S1/S2 overpasses (adds a cloud estimate column):
 
   ```bash
-  python next_pass.py -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1 -c
+  next_pass.py -b 29 31 -100 -97 -p DSWX-HLS_V1 DSWX-S1_V1 -c
   ```
 
 - **Generate old OPERA products** for a previous event date (YYYY-MM-DD):
   
   ```bash
-  python next_pass.py -b 17.32 18.80 -78.61 -75.58 -f opera_search -d 2025-10-01
+  next_pass.py -b 17.32 18.80 -78.61 -75.58 -f opera_search -d 2025-10-01
   ```
 
 - **Generate OPERA Products DRCS map** using a UTC event date in format YYYY-MM-DDTHH:MM 
   (Please consider replacing the date in the example with a recent event date):
 
   ```bash
-  python next_pass.py -b 17.32 18.80 -78.61 -75.58 -g 2025-11-18T01:00
+  next_pass.py -b 17.32 18.80 -78.61 -75.58 -g 2025-11-18T01:00
   ```
 
 > Use `-h/--help` to see all flags and defaults.

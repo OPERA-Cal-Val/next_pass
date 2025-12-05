@@ -3,28 +3,56 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "next_pass"
+name = "next-pass"
 version = "0.1.0"
-description = "Tool to find upcoming satellite overpasses and OPERA product availability"
+description = "Predict the next satellite overpass (S1/S2/L8/L9) over an AOI and query OPERA products."
+readme = "README.md"
+requires-python = ">=3.10"
+
+license = { file = "LICENSE" }
+
 authors = [
-    { name = "OPERA-Cal-Val" }
+  { name = "Emre Havazli, Ines Fenni, and OPERA Disaster Response Team" },
 ]
-readme = ""
-requires-python = ">=3.7"
-dependencies = []  # Add any runtime dependencies here if needed
-license = {text = "MIT"}  # Update if using a different license
+
+keywords = [
+  "satellite",
+  "remote-sensing",
+  "sar",
+  "sentinel-1",
+  "sentinel-2",
+  "landsat",
+  "opera",
+  "earth-observation",
+  "overpass",
+]
+
 classifiers = [
-    "Programming Language :: Python :: 3"
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: GIS",
 ]
-urls = { "Homepage" = "https://github.com/OPERA-Cal-Val/next_pass" }
+
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+
+[project.urls]
+Homepage = "https://github.com/OPERA-Cal-Val/next_pass"
+Source = "https://github.com/OPERA-Cal-Val/next_pass"
+Issues = "https://github.com/OPERA-Cal-Val/next_pass/issues"
+
+[project.scripts]
+"next-pass" = "next_pass:main"
 
 [tool.setuptools]
-py-modules = [
-    "next_pass",
-    "collection_builder",
-    "landsat_pass",
-    "sentinel_pass",
-    "opera_products",
-    "plot_maps",
-    "utils"
-]
+py-modules = ["next_pass"]
+
+[tool.setuptools.packages.find]
+include = ["utils"]
