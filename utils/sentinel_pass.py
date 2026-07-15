@@ -7,7 +7,11 @@ import pandas as pd
 from tabulate import tabulate
 
 from utils.cloudiness import make_get_cloudiness_for_row
-from utils.tide_prediction import make_get_tide_for_row, get_stations_in_aoi
+from utils.tide_prediction import (
+    make_get_tide_for_row,
+    get_stations_in_aoi,
+    get_tide_info_batch,
+)
 from utils.collection_builder import build_sentinel_collection
 from utils.utils import find_intersecting_collects, scrape_esa_download_urls
 
@@ -110,9 +114,12 @@ def create_s2_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-2 acquisition plan collection."""
     urls_a = scrape_esa_download_urls(SENT2_URL, "sentinel-2a")
     urls_b = scrape_esa_download_urls(SENT2_URL, "sentinel-2b")
-    urls = urls_a + urls_b
+    urls_c = scrape_esa_download_urls(SENT2_URL, "sentinel-2c")
+    urls = urls_a + urls_b + urls_c
 
-    platforms = ["S2A"] * len(urls_a) + ["S2B"] * len(urls_b)
+    platforms = (
+        ["S2A"] * len(urls_a) + ["S2B"] * len(urls_b) + ["S2C"] * len(urls_c)
+    )
 
     return build_sentinel_collection(
         urls,
@@ -168,11 +175,11 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
         if has_tide:
             if isinstance(row.tide, list):
                 tide_str = ", ".join(
-                    v["nearest"] if isinstance(v, dict) else (v if v is not None else "N/A")
+                    v["nearest"] if (isinstance(v, dict) and "nearest" in v) else "N/A"
                     for v in row.tide
                 )
             else:
-                tide_str = row.tide["nearest"] if isinstance(row.tide, dict) else (row.tide if row.tide is not None else "N/A")
+                tide_str = row.tide["nearest"] if (isinstance(row.tide, dict) and "nearest" in row.tide) else "N/A"
             base_row.append(tide_str)
 
         table.append(base_row)
@@ -352,11 +359,43 @@ def next_sentinel_pass(
                     num_rows,
                     len(noaa_stations),
                 )
-                get_tide_for_row = make_get_tide_for_row(geometry, noaa_stations)
-                collects_grouped["tide"] = collects_grouped.apply(
-                    get_tide_for_row,
-                    axis=1,
-                )
+                # Batch ALL target times across rows into a single NOAA API call
+                # This avoids rate limiting (HTTP 403) from too many requests
+                all_target_isos = []
+                row_ranges = []  # list of (start_idx, end_idx) tuples in row order
+
+                for _, row in collects_grouped.iterrows():
+                    dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
+                    row_isos = []
+                    for t in dates:
+                        if isinstance(t, datetime):
+                            if t.tzinfo is not None and t.tzinfo != timezone.utc:
+                                t = t.astimezone(timezone.utc)
+                            row_isos.append(t.strftime("%Y-%m-%dT%H:%M:%S"))
+                        else:
+                            row_isos.append(t)
+
+                    start_idx = len(all_target_isos)
+                    all_target_isos.extend(row_isos)
+                    row_ranges.append((start_idx, start_idx + len(row_isos)))
+
+                # ONE batched call for all rows
+                if all_target_isos:
+                    all_tide_results = get_tide_info_batch(
+                        polygon=geometry,
+                        target_isos=all_target_isos,
+                        station_dicts=noaa_stations,
+                        allow_interpolation=True,
+                    )
+                else:
+                    all_tide_results = []
+
+                # Distribute results back to each row in order
+                tide_per_row = [
+                    all_tide_results[start:end] for start, end in row_ranges
+                ]
+                collects_grouped["tide"] = tide_per_row
+
         return {
             "next_collect_info": format_collects(collects_grouped),
             "next_collect_geometry": collects_grouped["geometry"].tolist(),

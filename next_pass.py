@@ -105,8 +105,10 @@ def create_parser() -> argparse.ArgumentParser:
         "--tide",
         action="store_true",
         help=(
-            "Display NOAA Tide Predictions for future and/or "
-            "past overpasses, respectively"
+            "Display NOAA Tide Predictions for future and/or past overpasses. "
+            "Note: For Landsat and NISAR, displayed passes are limited to those "
+            "within 60 days (NOAA API forecast limit) to improve output readability; "
+            "a summary note lists any passes scheduled beyond that window."
         ),
     )
     parser.add_argument(
@@ -193,11 +195,11 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
 
     if "nisar" in selected:
         LOGGER.info("Fetching NISAR data...")
-        nisar = next_nisar_pass(geometry, n_day_past)
+        nisar = next_nisar_pass(geometry, n_day_past, arg_tide=pred_tide)
 
     if "landsat" in selected:
         LOGGER.info("Fetching Landsat data...")
-        landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past)
+        landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past, pred_tide)
 
     return {
         "sentinel-1": sentinel1,

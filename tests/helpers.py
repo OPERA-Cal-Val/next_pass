@@ -97,6 +97,12 @@ class FakeRow:
     def __getitem__(self, key):
         return self._mapping[key]
 
+    def __setitem__(self, key, value):
+        self._mapping[key] = value
+
+    def get(self, key, default=None):
+        return self._mapping.get(key, default)
+
 
 class _ILocAccessor:
     def __init__(self, frame):
@@ -264,7 +270,13 @@ class FakeFrame:
     def apply(self, func, axis=0):
         if axis != 1:
             raise ValueError(axis)
-        return [func(FakeRow(row)) for row in self.rows]
+        results = [func(FakeRow(row)) for row in self.rows]
+        # When func returns FakeRow (row-level transformation), return a FakeFrame
+        # so callers can chain .dropna()/.reset_index(). Scalar returns stay as a list.
+        if any(isinstance(r, FakeRow) for r in results):
+            kept = [r._mapping for r in results if isinstance(r, FakeRow)]
+            return FakeFrame(kept)
+        return results
 
     def drop(self, columns=None):
         columns = columns or []

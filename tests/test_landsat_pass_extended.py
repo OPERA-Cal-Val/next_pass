@@ -196,7 +196,8 @@ def test_next_landsat_pass_aggregates_geometry_and_warnings(monkeypatch):
         n_day_past=13,
     )
 
-    assert result["next_collect_info"] == "formatted-table"
+    assert result["next_collect_info"].startswith("formatted-table")
+    assert "±15-40 minutes accuracy" in result["next_collect_info"]
     assert result["next_collect_geometry"][0].name == "merged"
     assert "Warning: stale warning" in result["next_collect_summary"][0]
 
@@ -236,3 +237,47 @@ def test_next_landsat_pass_includes_na_rows_when_no_path_rows(monkeypatch):
     assert captured["rows"][0][:3] == ["Ascending", "N/A", "N/A"]
     assert captured["rows"][1][:3] == ["Descending", "N/A", "N/A"]
     assert result["next_collect_geometry"] == []
+
+
+def test_estimate_landsat_overpass_time_western_hemisphere_stays_on_same_day():
+    """Los Angeles: 10:12 AM local ≈ 18:04 UTC — no day rollover."""
+    from datetime import timezone
+
+    result = landsat_pass.estimate_landsat_overpass_time("06/28/2026", 34.0, -118.0)
+
+    assert result.tzinfo == timezone.utc
+    assert result.date().isoformat() == "2026-06-28"
+    assert result.hour == 18
+    assert result.minute == 4
+
+
+def test_estimate_landsat_overpass_time_far_eastern_rolls_to_previous_day():
+    """Fiji / dateline: 10:12 AM local is late on the previous UTC day.
+
+    Regression guard: the old implementation used `% 24` + `.replace(hour=...)`
+    which kept the local calendar date, producing a date one day too late for
+    far-eastern longitudes.
+    """
+    from datetime import timezone
+
+    # lon = 175 (near dateline): utc_hour = 10.2 - 175/15 = -1.4666...
+    # → previous day at 22:32 UTC
+    result = landsat_pass.estimate_landsat_overpass_time("06/28/2026", -18.0, 175.0)
+
+    assert result.tzinfo == timezone.utc
+    assert result.date().isoformat() == "2026-06-27"
+    assert result.hour == 22
+    assert result.minute == 32
+
+
+def test_estimate_landsat_overpass_time_midpacific_boundary():
+    """Just past the rollover boundary — confirms the day flips correctly."""
+    from datetime import timezone
+
+    # lon = 155: utc_hour = 10.2 - 10.333 = -0.133 → previous day, 23:52 UTC
+    result = landsat_pass.estimate_landsat_overpass_time("06/28/2026", 0.0, 155.0)
+
+    assert result.tzinfo == timezone.utc
+    assert result.date().isoformat() == "2026-06-27"
+    assert result.hour == 23
+    assert result.minute == 52

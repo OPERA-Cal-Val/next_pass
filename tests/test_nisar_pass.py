@@ -131,6 +131,67 @@ def test_next_nisar_pass_groups_by_best_overlap(monkeypatch):
 
     result = nisar_pass.next_nisar_pass(FakePolygon("aoi"), 13)
 
-    assert result["next_collect_info"] == "table"
+    assert result["next_collect_info"].startswith("table")
+    assert "±20-40 minutes accuracy" in result["next_collect_info"]
     assert result["intersection_pct"] == [90.0]
+
+
+def test_estimate_nisar_overpass_time_western_descending_rolls_forward_one_day():
+    """Los Angeles descending: 6 PM local ≈ 01:52 UTC on the following day.
+
+    Regression guard: the old implementation used `% 24` + `.replace(hour=...)`
+    which produced 02:00 UTC on the SAME day for LA descending — off by 24 hours
+    and causing tide lookups to fetch the wrong day.
+    """
+    result = nisar_pass.estimate_nisar_overpass_time(
+        "2026-06-28", 34.0, -118.0, "Descending"
+    )
+
+    assert result.tzinfo == timezone.utc
+    assert result.date().isoformat() == "2026-06-29"
+    assert result.hour == 1
+    assert result.minute == 52
+
+
+def test_estimate_nisar_overpass_time_eastern_ascending_rolls_back_one_day():
+    """Tokyo ascending: 6 AM local ≈ 20:40 UTC on the previous day.
+
+    Regression guard: the old implementation produced 20:40 UTC on the SAME
+    calendar day for eastern-hemisphere ascending passes — off by 24 hours.
+    """
+    # lon = 140: utc_hour = 6 - 140/15 = -3.333... → previous day, 20:40 UTC
+    result = nisar_pass.estimate_nisar_overpass_time(
+        "2026-06-28", 35.0, 140.0, "Ascending"
+    )
+
+    assert result.tzinfo == timezone.utc
+    assert result.date().isoformat() == "2026-06-27"
+    assert result.hour == 20
+    assert result.minute == 40
+
+
+def test_estimate_nisar_overpass_time_prime_meridian_no_rollover():
+    """Sanity check: ascending pass at longitude 0 stays on the same UTC day."""
+    result = nisar_pass.estimate_nisar_overpass_time(
+        "2026-06-28", 0.0, 0.0, "Ascending"
+    )
+
+    assert result.tzinfo == timezone.utc
+    assert result.date().isoformat() == "2026-06-28"
+    assert result.hour == 6
+    assert result.minute == 0
+
+
+def test_estimate_nisar_overpass_time_dateline_descending_double_rollover():
+    """Far western dateline descending: rolls forward one full UTC day."""
+    # lon = -175: utc_hour = 18 - (-175/15) = 18 + 11.666... = 29.666...
+    # → next day at 05:40 UTC
+    result = nisar_pass.estimate_nisar_overpass_time(
+        "2026-06-28", -18.0, -175.0, "Descending"
+    )
+
+    assert result.tzinfo == timezone.utc
+    assert result.date().isoformat() == "2026-06-29"
+    assert result.hour == 5
+    assert result.minute == 40
 

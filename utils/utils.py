@@ -24,6 +24,30 @@ from urllib.parse import urlparse
 
 LOGGER = logging.getLogger("acquisition_utils")
 
+# ============================================================================
+# Orbital and physical constants
+# ============================================================================
+
+# Landsat 8/9 cross the equator at 10:12 AM local solar time (descending pass)
+# Source: https://www.usgs.gov/landsat-missions/landsat-8
+LANDSAT_EQUATORIAL_CROSSING_HOUR = 10.2  # 10:12 AM in decimal hours
+
+# NISAR nodal crossing times (local solar time)
+# Source: https://science.nasa.gov/mission/nisar/mission-overview/
+NISAR_ASCENDING_CROSSING_HOUR = 6.0    # 6:00 AM local
+NISAR_DESCENDING_CROSSING_HOUR = 18.0  # 6:00 PM local
+
+# Earth rotates 15° of longitude per hour (360° / 24 hours)
+# Used for local solar time approximation: LST ≈ UTC + (lon / 15)
+HOURS_PER_LONGITUDE_DEGREE = 15.0
+
+# ============================================================================
+# API and service limits
+# ============================================================================
+
+# NOAA tide prediction only supports forecasts up to ~60 days in the future for Landsat and NISAR to improve output readability 
+TIDE_PREDICTION_WINDOW_DAYS = 60
+
 
 class Tee:
     """Write to multiple streams (e.g., terminal and log file)."""
@@ -81,8 +105,10 @@ def download_kml(url: str, out_path: str = "collection.kml") -> Path:
 def parse_placemark(placemark: etree.Element) -> Optional[Tuple]:
     """Parse a single placemark from KML."""
     ns = ".//{http://www.opengis.net/kml/2.2}"
-    begin_date = datetime.fromisoformat(placemark.find(f"{ns}begin").text)
-    end_date = datetime.fromisoformat(placemark.find(f"{ns}end").text)
+    # Replace 'Z' with '+00:00' for Python 3.10 compatibility
+    # Sentinel KML files use ISO format with 'Z' suffix (e.g., "2026-06-28T18:03:59Z")
+    begin_date = datetime.fromisoformat(placemark.find(f"{ns}begin").text.replace("Z", "+00:00"))
+    end_date = datetime.fromisoformat(placemark.find(f"{ns}end").text.replace("Z", "+00:00"))
 
     data = placemark.find(f"{ns}ExtendedData")
     mode = data.find(f"{ns}Data[@name='Mode']/{ns}value").text
@@ -663,3 +689,78 @@ def format_satellite_arg(sat_list):
         return " and ".join(formatted)
     else:
         return ", ".join(formatted[:-1]) + f", and {formatted[-1]}"
+
+
+def filter_dates_beyond_window(
+    dates: List[Union[str, datetime]],
+    tide_data: List,
+    max_days: int = TIDE_PREDICTION_WINDOW_DAYS,
+    date_format: Optional[str] = None,
+) -> Tuple[List, List, int, Optional[datetime.date], Optional[datetime.date]]:
+    """
+    Filter dates and tide data to only those within max_days from now.
+
+    Tracks filtered dates for summary statistics (count, date range).
+
+    Args:
+        dates: List of date strings or datetime objects
+        tide_data: List of tide results (same length as dates, or empty)
+        max_days: Maximum days into the future to include (default: 60)
+        date_format: Format string if dates are strings (e.g., "%m/%d/%Y")
+
+    Returns:
+        tuple: (
+            filtered_dates: dates within the window,
+            filtered_tide_data: corresponding tide data,
+            future_passes_count: number of filtered dates,
+            future_passes_min_date: earliest filtered date (or None),
+            future_passes_max_date: latest filtered date (or None)
+        )
+
+    Example:
+        >>> dates = ["07/01/2026", "09/15/2026", "11/20/2026"]
+        >>> tides = ["+1.2m", "+1.5m", "+0.8m"]
+        >>> filtered_dates, filtered_tides, count, min_d, max_d = \\
+        ...     filter_dates_beyond_window(dates, tides, max_days=60, date_format="%m/%d/%Y")
+    """
+    from datetime import datetime, timedelta, timezone
+
+    max_future_date = datetime.now(timezone.utc).date() + timedelta(days=max_days)
+
+    filtered_dates = []
+    filtered_tide_data = []
+    future_passes_count = 0
+    future_passes_min_date = None
+    future_passes_max_date = None
+
+    for i, date_item in enumerate(dates):
+        # Convert to date object for comparison
+        if isinstance(date_item, str):
+            if date_format is None:
+                raise ValueError("date_format required when dates are strings")
+            date_obj = datetime.strptime(date_item, date_format).date()
+        elif isinstance(date_item, datetime):
+            date_obj = date_item.date() if hasattr(date_item, 'date') else date_item
+        else:
+            date_obj = date_item  # Already a date object
+
+        # Check if within window
+        if date_obj <= max_future_date:
+            filtered_dates.append(date_item)
+            if i < len(tide_data):
+                filtered_tide_data.append(tide_data[i])
+        else:
+            # Track filtered date for summary
+            future_passes_count += 1
+            if future_passes_min_date is None or date_obj < future_passes_min_date:
+                future_passes_min_date = date_obj
+            if future_passes_max_date is None or date_obj > future_passes_max_date:
+                future_passes_max_date = date_obj
+
+    return (
+        filtered_dates,
+        filtered_tide_data,
+        future_passes_count,
+        future_passes_min_date,
+        future_passes_max_date,
+    )

@@ -180,3 +180,171 @@ def test_get_spatial_extent_km_uses_projected_bounds(monkeypatch):
     result = utils_mod.get_spatial_extent_km({"type": "Polygon", "coordinates": []})
 
     assert result == {"width_km": 2.0, "height_km": 3.0, "area_km2": 5.0}
+
+
+def test_filter_dates_beyond_window_with_datetime_objects():
+    """Test filtering with datetime objects (NISAR-style)."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    dates = [
+        now + timedelta(days=10),
+        now + timedelta(days=30),
+        now + timedelta(days=50),
+        now + timedelta(days=70),
+        now + timedelta(days=90),
+    ]
+    tides = ["+1.0m", "+1.2m", "+1.5m", "+0.8m", "+1.0m"]
+
+    filtered_dates, filtered_tides, count, min_date, max_date = (
+        utils_mod.filter_dates_beyond_window(dates, tides, max_days=60)
+    )
+
+    # Should keep first 3 dates (10, 30, 50 days), filter out last 2 (70, 90 days)
+    assert len(filtered_dates) == 3
+    assert len(filtered_tides) == 3
+    assert filtered_tides == ["+1.0m", "+1.2m", "+1.5m"]
+    assert count == 2
+    assert min_date == (now + timedelta(days=70)).date()
+    assert max_date == (now + timedelta(days=90)).date()
+
+
+def test_filter_dates_beyond_window_with_date_strings():
+    """Test filtering with date strings (Landsat-style)."""
+    from datetime import datetime, timedelta
+
+    # Create date strings relative to today
+    now = datetime.now()
+    dates = [
+        (now + timedelta(days=10)).strftime("%m/%d/%Y"),
+        (now + timedelta(days=40)).strftime("%m/%d/%Y"),
+        (now + timedelta(days=80)).strftime("%m/%d/%Y"),
+    ]
+    tides = ["+1.1m", "+1.3m", "+0.9m"]
+
+    filtered_dates, filtered_tides, count, min_date, max_date = (
+        utils_mod.filter_dates_beyond_window(
+            dates, tides, max_days=60, date_format="%m/%d/%Y"
+        )
+    )
+
+    # Should keep first 2 dates, filter out last 1
+    assert len(filtered_dates) == 2
+    assert len(filtered_tides) == 2
+    assert count == 1
+
+
+def test_filter_dates_beyond_window_all_within_window():
+    """Test when all dates are within the window."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    dates = [
+        now + timedelta(days=10),
+        now + timedelta(days=20),
+        now + timedelta(days=30),
+    ]
+    tides = ["+1.0m", "+1.2m", "+1.5m"]
+
+    filtered_dates, filtered_tides, count, min_date, max_date = (
+        utils_mod.filter_dates_beyond_window(dates, tides, max_days=60)
+    )
+
+    # All dates should be kept
+    assert len(filtered_dates) == 3
+    assert len(filtered_tides) == 3
+    assert count == 0
+    assert min_date is None
+    assert max_date is None
+
+
+def test_filter_dates_beyond_window_all_beyond_window():
+    """Test when all dates are beyond the window."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    dates = [
+        now + timedelta(days=70),
+        now + timedelta(days=80),
+        now + timedelta(days=90),
+    ]
+    tides = ["+1.0m", "+1.2m", "+1.5m"]
+
+    filtered_dates, filtered_tides, count, min_date, max_date = (
+        utils_mod.filter_dates_beyond_window(dates, tides, max_days=60)
+    )
+
+    # All dates should be filtered out
+    assert len(filtered_dates) == 0
+    assert len(filtered_tides) == 0
+    assert count == 3
+    assert min_date == (now + timedelta(days=70)).date()
+    assert max_date == (now + timedelta(days=90)).date()
+
+
+def test_filter_dates_beyond_window_empty_lists():
+    """Test with empty input lists."""
+    filtered_dates, filtered_tides, count, min_date, max_date = (
+        utils_mod.filter_dates_beyond_window([], [], max_days=60)
+    )
+
+    assert filtered_dates == []
+    assert filtered_tides == []
+    assert count == 0
+    assert min_date is None
+    assert max_date is None
+
+
+def test_filter_dates_beyond_window_mismatched_tide_data():
+    """Test when tide data is shorter than dates list."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    dates = [
+        now + timedelta(days=10),
+        now + timedelta(days=20),
+        now + timedelta(days=30),
+    ]
+    tides = ["+1.0m"]  # Only 1 tide value for 3 dates
+
+    filtered_dates, filtered_tides, count, min_date, max_date = (
+        utils_mod.filter_dates_beyond_window(dates, tides, max_days=60)
+    )
+
+    # All dates kept, but only 1 tide value
+    assert len(filtered_dates) == 3
+    assert len(filtered_tides) == 1
+    assert count == 0
+
+
+def test_filter_dates_beyond_window_custom_max_days():
+    """Test with custom max_days parameter."""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    dates = [
+        now + timedelta(days=5),
+        now + timedelta(days=15),
+        now + timedelta(days=25),
+    ]
+    tides = ["+1.0m", "+1.2m", "+1.5m"]
+
+    # Use max_days=10 instead of default 60
+    filtered_dates, filtered_tides, count, min_date, max_date = (
+        utils_mod.filter_dates_beyond_window(dates, tides, max_days=10)
+    )
+
+    # Only first date (5 days) should be kept
+    assert len(filtered_dates) == 1
+    assert len(filtered_tides) == 1
+    assert count == 2
+
+
+def test_filter_dates_beyond_window_requires_date_format_for_strings():
+    """Test that date_format is required when dates are strings."""
+    dates = ["07/10/2026", "08/20/2026"]
+    tides = ["+1.0m", "+1.2m"]
+
+    # Should raise ValueError when date_format is not provided
+    with pytest.raises(ValueError, match="date_format required"):
+        utils_mod.filter_dates_beyond_window(dates, tides, max_days=60)

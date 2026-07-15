@@ -92,12 +92,12 @@ sentinel_pass.next_sentinel_pass = lambda sat, geometry, n_day_past, pred_cloudi
     "next_collect_geometry": [geometry],
     "next_collect_summary": [sat],
 }}
-nisar_pass.next_nisar_pass = lambda geometry, n_day_past: {{
+nisar_pass.next_nisar_pass = lambda geometry, n_day_past, arg_tide=False: {{
     "next_collect_info": "nisar",
     "next_collect_geometry": [geometry],
     "next_collect_summary": ["nisar"],
 }}
-landsat_pass.next_landsat_pass = lambda lat, lon, geometry, n_day_past: {{
+landsat_pass.next_landsat_pass = lambda lat, lon, geometry, n_day_past, arg_tide=False: {{
     "next_collect_info": "landsat",
     "next_collect_geometry": [geometry],
     "next_collect_summary": ["landsat"],
@@ -236,12 +236,12 @@ def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
     monkeypatch.setattr(
         nisar_pass,
         "next_nisar_pass",
-        lambda geometry, n_day_past: {"next_collect_info": f"nisar-{geometry.name}-{n_day_past}"},
+        lambda geometry, n_day_past, arg_tide=False: {"next_collect_info": f"nisar-{geometry.name}-{n_day_past}"},
     )
     monkeypatch.setattr(
         landsat_pass,
         "next_landsat_pass",
-        lambda lat, lon, geometry, n_day_past: {"next_collect_info": f"landsat-{lat}-{lon}-{n_day_past}"},
+        lambda lat, lon, geometry, n_day_past, arg_tide=False: {"next_collect_info": f"landsat-{lat}-{lon}-{n_day_past}"},
     )
 
     args = argparse.Namespace(
@@ -275,7 +275,7 @@ def test_find_next_overpass_routes_single_satellite(monkeypatch, tmp_path):
     monkeypatch.setattr(
         landsat_pass,
         "next_landsat_pass",
-        lambda lat, lon, geometry, n_day_past: {"lat": lat, "lon": lon, "name": geometry.name, "days": n_day_past},
+        lambda lat, lon, geometry, n_day_past, arg_tide=False: {"lat": lat, "lon": lon, "name": geometry.name, "days": n_day_past},
     )
 
     args = argparse.Namespace(

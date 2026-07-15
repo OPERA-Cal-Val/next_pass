@@ -1,3 +1,31 @@
+"""
+NOAA Tide Prediction Module
+
+CRITICAL TIMEZONE CONTRACT:
+===========================
+All datetimes in this module are NAIVE datetimes representing UTC/GMT.
+
+- parse_datetime() returns naive datetimes (UTC)
+- NOAA API is always called with time_zone="gmt"
+- All comparisons assume naive datetimes are UTC
+- DO NOT pass timezone-aware datetimes to functions in this module
+- DO NOT change NOAA API time_zone parameter
+
+This design is intentional for NOAA API compatibility.
+See claude_md/timezone_handling.md for full explanation.
+
+DEVELOPER GUIDELINES:
+=====================
+If you modify this code:
+
+1. ✅ ALWAYS keep all datetimes as naive representing UTC
+2. ✅ ALWAYS configure NOAA API with time_zone="gmt"
+3. ✅ NEVER pass timezone-aware datetimes to tide prediction functions
+4. ✅ NEVER change NOAA API time_zone parameter
+
+Breaking these rules will cause TypeError in datetime comparisons.
+"""
+
 import requests
 import os
 import time
@@ -10,6 +38,8 @@ from datetime import datetime, timedelta
 from shapely.geometry import Point
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points
+
+from utils.utils import TIDE_PREDICTION_WINDOW_DAYS
 
 LOGGER = logging.getLogger("tide_prediction")
 
@@ -66,6 +96,20 @@ def ensure_station_cache(filepath: str | Path | None = None, max_age_days=30):
 
 
 def parse_datetime(dt_str: str) -> datetime:
+    """Parse ISO datetime string into naive datetime representing UTC.
+
+    IMPORTANT: Returns naive datetime. All timestamps in this module
+    are naive datetimes representing UTC/GMT. NOAA API is always
+    configured with time_zone="gmt".
+
+    Do not mix with timezone-aware datetimes - will cause TypeError.
+
+    Args:
+        dt_str: ISO datetime string (e.g., "2026-06-28T18:03:59" or "2026-06-28 18:00")
+
+    Returns:
+        Naive datetime object representing UTC time
+    """
     return datetime.fromisoformat(dt_str.replace("Z", ""))
 
 
@@ -153,6 +197,29 @@ def get_stations_in_aoi(
 
 
 def interpolate_tide(times, values, target_dt):
+    """Interpolate tide height at target time.
+
+    WARNING: All inputs must be naive datetimes representing UTC.
+    Do not mix timezone-aware and naive datetimes.
+
+    Args:
+        times: List of ISO datetime strings
+        values: List of tide heights in meters
+        target_dt: Naive datetime representing UTC
+
+    Returns:
+        Interpolated tide height in meters, or None if outside time range
+
+    Raises:
+        TypeError: If target_dt is timezone-aware
+    """
+    # Safety check: reject timezone-aware datetimes
+    if hasattr(target_dt, 'tzinfo') and target_dt.tzinfo is not None:
+        raise TypeError(
+            f"interpolate_tide expects naive datetime (UTC), got timezone-aware: {target_dt.tzinfo}. "
+            f"See module docstring for timezone contract."
+        )
+
     for i in range(len(times) - 1):
         t1 = parse_datetime(times[i])
         t2 = parse_datetime(times[i + 1])
@@ -172,7 +239,31 @@ def interpolate_tide(times, values, target_dt):
 
 
 def _find_tide_direction(times_iso: list, values: list, target_dt: datetime) -> str:
-    """Return 'rising' or 'falling' based on hourly values bracketing target_dt."""
+    """Return 'rising', 'falling', or 'slack' based on hourly values bracketing target_dt.
+
+    Calculates the rate of change (slope) in meters per hour and compares to a threshold
+    of 0.02 m/hr to distinguish active tide movement from slack water.
+
+    WARNING: target_dt must be naive datetime representing UTC.
+
+    Args:
+        times_iso: List of ISO datetime strings
+        values: List of tide heights in meters
+        target_dt: Naive datetime representing UTC
+
+    Returns:
+        'rising', 'falling', or 'slack' (TIDE_DIRECTION_UNKNOWN)
+
+    Raises:
+        TypeError: If target_dt is timezone-aware
+    """
+    # Safety check: reject timezone-aware datetimes
+    if hasattr(target_dt, 'tzinfo') and target_dt.tzinfo is not None:
+        raise TypeError(
+            f"_find_tide_direction expects naive datetime (UTC), got timezone-aware: {target_dt.tzinfo}. "
+            f"See module docstring for timezone contract."
+        )
+
     before_val = before_t = None
     after_val = after_t = None
 
@@ -185,17 +276,46 @@ def _find_tide_direction(times_iso: list, values: list, target_dt: datetime) -> 
             if after_t is None or t < after_t:
                 after_t, after_val = t, values[i]
 
-    if before_val is not None and after_val is not None:
-        if after_val > before_val:
-            return "rising"
-        if after_val < before_val:
-            return "falling"
-        return TIDE_DIRECTION_UNKNOWN
+    if before_val is not None and after_val is not None and before_t is not None and after_t is not None:
+        # Calculate slope (rate of change) in meters per hour
+        time_diff_hours = (after_t - before_t).total_seconds() / 3600.0
+        if time_diff_hours > 0:
+            slope = (after_val - before_val) / time_diff_hours
+
+            # Apply threshold to distinguish active movement from slack water
+            THRESHOLD_M_PER_HOUR = 0.02
+            if slope > THRESHOLD_M_PER_HOUR:
+                return "rising"
+            elif slope < -THRESHOLD_M_PER_HOUR:
+                return "falling"
+            else:
+                return TIDE_DIRECTION_UNKNOWN  # "slack"
+
     return ""
 
 
 def _find_nearest_hilo_label(hilo_predictions: list, target_dt: datetime) -> str:
-    """Return the type (H, HH, L, LL) of the hilo event nearest to target_dt."""
+    """Return the type (H, HH, L, LL) of the hilo event nearest to target_dt.
+
+    WARNING: target_dt must be naive datetime representing UTC.
+
+    Args:
+        hilo_predictions: List of dicts with 't' (timestamp) and 'type' (H/HH/L/LL)
+        target_dt: Naive datetime representing UTC
+
+    Returns:
+        'H', 'HH', 'L', 'LL', or '' if no predictions
+
+    Raises:
+        TypeError: If target_dt is timezone-aware
+    """
+    # Safety check: reject timezone-aware datetimes
+    if hasattr(target_dt, 'tzinfo') and target_dt.tzinfo is not None:
+        raise TypeError(
+            f"_find_nearest_hilo_label expects naive datetime (UTC), got timezone-aware: {target_dt.tzinfo}. "
+            f"See module docstring for timezone contract."
+        )
+
     if not hilo_predictions:
         return ""
     nearest_label = ""
@@ -245,12 +365,33 @@ def get_tide_info_batch(
         )["id"]
 
         target_dts = [parse_datetime(t) for t in target_isos]
-        begin_date = (min(target_dts) - timedelta(days=1)).strftime("%Y%m%d")
-        end_date = (max(target_dts) + timedelta(days=1)).strftime("%Y%m%d")
+
+        # Filter out dates more than TIDE_PREDICTION_WINDOW_DAYS in the future
+        # (NOAA API limit). Keep all past dates.
+        now = datetime.now()
+        max_future_date = now + timedelta(days=TIDE_PREDICTION_WINDOW_DAYS)
+
+        # Track which indices are beyond the 2-month limit
+        valid_indices = []
+        valid_dts = []
+        for i, dt in enumerate(target_dts):
+            if dt <= max_future_date:
+                valid_indices.append(i)
+                valid_dts.append(dt)
+
+        # If no valid dates, return all None
+        if not valid_dts:
+            LOGGER.warning("All requested dates are more than 2 months in the future - skipping tide predictions")
+            return [None] * len(target_isos)
+
+        # Use only valid dates for API request
+        begin_date = (min(valid_dts) - timedelta(days=1)).strftime("%Y%m%d")
+        end_date = (max(valid_dts) + timedelta(days=1)).strftime("%Y%m%d")
 
         # per_station_results[i] = list of (station_id, formatted_string)
-        per_station_results = {i: [] for i in range(len(target_isos))}
-        nearest_results = {i: None for i in range(len(target_isos))}
+        # Only initialize for valid indices (within 2-month limit)
+        per_station_results = {i: [] for i in valid_indices}
+        nearest_results = {i: None for i in valid_indices}
 
         for st in station_dicts:
             station_id = st["id"]
@@ -285,7 +426,10 @@ def get_tide_info_batch(
                 values = [float(p["v"]) for p in predictions]
                 times_iso_short = [t[:16] for t in times_iso]
 
-                for i, (target_iso, target_dt) in enumerate(zip(target_isos, target_dts)):
+                # Only process valid indices (within 2-month limit)
+                for j, valid_idx in enumerate(valid_indices):
+                    target_iso = target_isos[valid_idx]
+                    target_dt = valid_dts[j]
                     target_iso_short = target_iso[:16]
                     if target_iso_short in times_iso_short:
                         value = values[times_iso_short.index(target_iso_short)]
@@ -304,20 +448,21 @@ def get_tide_info_batch(
                     label_str = f"({tag})" if tag else ""
                     formatted = f"{value:.2f}{label_str}"
 
-                    per_station_results[i].append((station_id, formatted))
+                    per_station_results[valid_idx].append((station_id, formatted))
                     if station_id == nearest_id:
-                        nearest_results[i] = formatted
+                        nearest_results[valid_idx] = formatted
 
             except requests.RequestException:
                 continue
 
         results = []
         for i in range(len(target_isos)):
-            per = per_station_results[i]
+            # Skip indices beyond 2-month limit (not in valid_indices)
+            per = per_station_results.get(i, [])
             if not per:
                 results.append(None)
                 continue
-            nearest = nearest_results[i] or per[0][1]
+            nearest = nearest_results.get(i) or per[0][1]
             results.append({"nearest": nearest, "per_station": {sid: v for sid, v in per}})
 
         return results
@@ -338,6 +483,8 @@ def make_get_tide_for_row(aoi_geometry, station_dicts):
         Function that takes a dataframe row and returns tide info
     """
     def get_tide_for_row(row):
+        from datetime import timezone
+
         times = row["begin_date"]
 
         if not isinstance(times, list):
@@ -346,6 +493,20 @@ def make_get_tide_for_row(aoi_geometry, station_dicts):
         target_isos = []
         for t in times:
             if isinstance(t, datetime):
+                # Ensure datetime is in UTC before converting to naive string
+                # This prevents silent errors if a non-UTC datetime somehow enters the system
+                if t.tzinfo is not None and t.tzinfo != timezone.utc:
+                    LOGGER.warning(
+                        "Non-UTC datetime detected (%s), converting to UTC for tide prediction",
+                        t.tzinfo
+                    )
+                    t = t.astimezone(timezone.utc)
+                elif t.tzinfo is None:
+                    LOGGER.warning(
+                        "Naive datetime detected (no timezone), assuming UTC for tide prediction"
+                    )
+                # Convert to naive ISO string (timezone stripped intentionally)
+                # NOAA API is configured with time_zone="gmt" to interpret these as UTC
                 t = t.strftime("%Y-%m-%dT%H:%M:%S")
             target_isos.append(t)
 

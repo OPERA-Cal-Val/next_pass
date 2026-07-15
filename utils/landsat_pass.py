@@ -10,7 +10,14 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from tabulate import tabulate
 
-from utils.utils import arcgis_to_polygon
+from utils.utils import (
+    arcgis_to_polygon,
+    filter_dates_beyond_window,
+    LANDSAT_EQUATORIAL_CROSSING_HOUR,
+    HOURS_PER_LONGITUDE_DEGREE,
+    TIDE_PREDICTION_WINDOW_DAYS,
+)
+from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +43,53 @@ MAX_SCHEDULE_SEARCH_DAYS = 365
 UNIX_EPOCH = date(1970, 1, 1)
 
 
+def estimate_landsat_overpass_time(date_str: str, lat: float, lon: float) -> datetime:
+    """
+    Estimate Landsat overpass time based on USGS orbital specifications.
+
+    Landsat 8 & 9 cross the equator at 10:12 AM local solar time (±5 minutes)
+    on descending (daytime) passes. This function estimates the UTC overpass
+    time for a given location based on this specification.
+
+    Args:
+        date_str: Date in format MM/DD/YYYY (e.g., "06/28/2026")
+        lat: Latitude of the location
+        lon: Longitude of the location (negative for Western hemisphere)
+
+    Returns:
+        datetime: Estimated overpass time in UTC timezone
+
+    Notes:
+        - Based on USGS specification: equatorial crossing at 10:12 AM local time
+        - Source: https://www.usgs.gov/landsat-missions/landsat-8
+        - Accuracy: ±15-20 minutes near equator, ±20-40 minutes at higher latitudes
+        - Simplified calculation does not account for equation of time or orbital perturbations
+        - Uses local solar time approximation: LST ≈ UTC + (lon/15) hours
+
+    Example:
+        >>> estimate_landsat_overpass_time("06/28/2026", 34.0, -118.0)
+        # Los Angeles: ~10:12 AM local ≈ 18:04 UTC same day
+        >>> estimate_landsat_overpass_time("06/28/2026", -35.0, 150.0)
+        # Sydney: ~10:12 AM local ≈ 00:12 UTC same day
+    """
+    from datetime import time, timezone
+
+    # Parse the calendar date (MM/DD/YYYY format)
+    date_obj = datetime.strptime(date_str, DATE_FORMAT).date()
+
+    # Landsat crosses the equator at 10:12 AM local solar time
+    local_solar_hour = LANDSAT_EQUATORIAL_CROSSING_HOUR
+
+    # Local Solar Time (LST) approximation:
+    # LST ≈ UTC + (longitude / HOURS_PER_LONGITUDE_DEGREE) hours
+    # utc_hour may be negative or > 24; timedelta below rolls the day accordingly.
+    local_solar_offset_hours = lon / HOURS_PER_LONGITUDE_DEGREE
+    utc_hour = local_solar_hour - local_solar_offset_hours
+
+    base = datetime.combine(date_obj, time.min, tzinfo=timezone.utc)
+    return base + timedelta(hours=utc_hour)
+
+
 @dataclass
 class LandsatScheduleSource:
     """Normalized Landsat schedule inputs from modern or legacy USGS sources."""
@@ -50,9 +104,11 @@ class LandsatScheduleSource:
 
 def format_date_lines(date_strings: list[str], per_line: int = 5) -> str:
     """Wrap Landsat pass dates across multiple lines."""
+    from datetime import timezone
+
     formatted_dates = [
         date_str
-        + (" (P)" if datetime.strptime(date_str, DATE_FORMAT) < datetime.now() else "")
+        + (" (P)" if datetime.strptime(date_str, DATE_FORMAT).replace(tzinfo=timezone.utc) < datetime.now(timezone.utc) else "")
         for date_str in date_strings
     ]
     return "\n".join(
@@ -384,6 +440,7 @@ def next_landsat_pass(
     lon: float,
     geometryAOI,
     n_day_past: float,
+    arg_tide: bool = False,
 ) -> dict | None:
     """
     Retrieve and format the next Landsat passes for a given location.
@@ -394,6 +451,7 @@ def next_landsat_pass(
         geometryAOI: Geometry of the area of interest used for computing
             intersection percentage.
         n_day_past (float): Number of days in the past to search cycles JSON.
+        arg_tide (bool): Whether to compute NOAA tide predictions per overpass.
 
     Returns:
         dict or None: Dictionary containing next Landsat passes information
@@ -409,6 +467,8 @@ def next_landsat_pass(
         )
         geometry_groups = defaultdict(list)
 
+        # First pass: collect all features by key
+        features_by_key = defaultdict(list)
         for direction, features in results.items():
             if features:
                 for feature in features:
@@ -417,38 +477,170 @@ def next_landsat_pass(
                     geom = feature.get("geometry")
                     polygon = arcgis_to_polygon(geom)
 
-                    if geometryAOI.geom_type == "Point":
-                        intersection_pct = 100
-                    elif polygon and polygon.is_valid and geometryAOI.is_valid:
-                        intersection = polygon.intersection(geometryAOI)
-                        intersection_pct = 100 * (intersection.area / geometryAOI.area)
-                    else:
-                        intersection_pct = 0.0
-
                     next_pass_dates, schedule_warnings = find_next_landsat_pass(
                         path,
                         n_day_past,
                         schedule_source=schedule_source,
                         num_passes=5,
                     )
+
                     for mission, dates in next_pass_dates.items():
                         key = (direction.capitalize(), path, mission.capitalize())
-                        aggregated_data[key]["rows"].add(row)
-                        aggregated_data[key]["overlap_pct"] += intersection_pct
-                        if aggregated_data[key]["dates"] is None:
-                            aggregated_data[key]["dates"] = dates
-                        if schedule_warnings:
-                            aggregated_data[key]["warnings"] = schedule_warnings
+                        features_by_key[key].append({
+                            "row": row,
+                            "polygon": polygon,
+                            "dates": dates,
+                            "warnings": schedule_warnings,
+                        })
 
-                        if polygon:
-                            geometry_groups[key].append(polygon)
+        # Second pass: aggregate features with proper geometry union
+        for key, features in features_by_key.items():
+            for feature in features:
+                aggregated_data[key]["rows"].add(feature["row"])
+                if aggregated_data[key]["dates"] is None:
+                    aggregated_data[key]["dates"] = feature["dates"]
+                if feature["warnings"]:
+                    aggregated_data[key]["warnings"] = feature["warnings"]
+                if feature["polygon"]:
+                    geometry_groups[key].append(feature["polygon"])
+
+            # Calculate intersection percentage from merged geometries
+            polygons = geometry_groups.get(key, [])
+            if polygons:
+                merged_polygon = unary_union(polygons)
+                if geometryAOI.geom_type == "Point":
+                    intersection_pct = 100
+                elif merged_polygon.is_valid and geometryAOI.is_valid:
+                    intersection = merged_polygon.intersection(geometryAOI)
+                    intersection_pct = 100 * (intersection.area / geometryAOI.area)
+                else:
+                    intersection_pct = 0.0
+                aggregated_data[key]["overlap_pct"] = intersection_pct
             else:
+                aggregated_data[key]["overlap_pct"] = 0.0
+
+        # Handle empty results
+        for direction, features in results.items():
+            if not features:
                 key = (direction.capitalize(), "N/A", "N/A")
                 aggregated_data[key]["rows"].add("N/A")
                 aggregated_data[key]["dates"] = []
                 aggregated_data[key]["overlap_pct"] = 0.0
 
+        # Tide prediction (if requested)
+        noaa_stations = None
+        tide_data_by_key = {}
+        if arg_tide:
+            try:
+                noaa_stations = get_stations_in_aoi(geometryAOI)
+                if not noaa_stations:
+                    logger.warning(
+                        "No NOAA stations found in AOI - "
+                        "tide predictions will be empty"
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Could not retrieve NOAA stations for AOI: %s", e
+                )
+                noaa_stations = None
+
+            if noaa_stations:
+                logger.info(
+                    "Calculating tides for Landsat overpasses using %d "
+                    "stations ...",
+                    len(noaa_stations),
+                )
+                # Collect ALL target times across all keys into a single batch
+                # This drastically reduces NOAA API calls (avoiding rate limiting)
+                all_target_isos = []
+                key_to_indices = {}  # key -> list of indices into all_target_isos
+
+                for key, data in aggregated_data.items():
+                    if data["dates"]:
+                        estimated_datetimes = [
+                            estimate_landsat_overpass_time(
+                                date_str, lat, lon
+                            )
+                            for date_str in data["dates"]
+                        ]
+                        # Convert to naive ISO strings (timezone stripped intentionally)
+                        # NOAA API is configured for GMT in tide_prediction.py, so all times are UTC
+                        key_isos = [
+                            dt.strftime("%Y-%m-%dT%H:%M:%S")
+                            for dt in estimated_datetimes
+                        ]
+                        # Track where each key's tides land in the batch result
+                        start_idx = len(all_target_isos)
+                        all_target_isos.extend(key_isos)
+                        key_to_indices[key] = list(
+                            range(start_idx, start_idx + len(key_isos))
+                        )
+                    else:
+                        key_to_indices[key] = []
+
+                # ONE batched call for all keys - drastically fewer NOAA API requests
+                if all_target_isos:
+                    all_tide_results = get_tide_info_batch(
+                        polygon=geometryAOI,
+                        target_isos=all_target_isos,
+                        station_dicts=noaa_stations,
+                        allow_interpolation=True,
+                    )
+                else:
+                    all_tide_results = []
+
+                # Distribute results back to each key
+                for key, indices in key_to_indices.items():
+                    tide_data_by_key[key] = [all_tide_results[i] for i in indices]
+
+        # Filter: only show rows with at least one date within 2 months if tide is requested
+        # Track future passes beyond tide window for summary
+        future_passes_count = 0
+        future_passes_min_date = None
+        future_passes_max_date = None
+
+        if arg_tide:
+            # Filter dates within each key's data
+            filtered_aggregated_data = {}
+            for key, data in aggregated_data.items():
+                if data["dates"]:
+                    # Filter dates to only those within 2 months, keeping tide predictions in sync
+                    tide_results = tide_data_by_key.get(key, [])
+
+                    (
+                        filtered_dates,
+                        filtered_tides,
+                        count,
+                        min_date,
+                        max_date,
+                    ) = filter_dates_beyond_window(
+                        data["dates"],
+                        tide_results,
+                        max_days=TIDE_PREDICTION_WINDOW_DAYS,
+                        date_format=DATE_FORMAT,
+                    )
+
+                    # Update tracking variables
+                    future_passes_count += count
+                    if min_date is not None:
+                        if future_passes_min_date is None or min_date < future_passes_min_date:
+                            future_passes_min_date = min_date
+                    if max_date is not None:
+                        if future_passes_max_date is None or max_date > future_passes_max_date:
+                            future_passes_max_date = max_date
+
+                    # Only include this row if it has at least one valid date
+                    if filtered_dates:
+                        filtered_data = data.copy()
+                        filtered_data["dates"] = filtered_dates
+                        filtered_aggregated_data[key] = filtered_data
+                        tide_data_by_key[key] = filtered_tides
+                else:
+                    filtered_aggregated_data[key] = data
+            aggregated_data = filtered_aggregated_data
+
         row_data_with_keys = []
+        header_time_str = ""
         for key, data in aggregated_data.items():
             direction, path, mission = key
             row_list = sorted(data["rows"])
@@ -456,8 +648,19 @@ def next_landsat_pass(
             overlap = data["overlap_pct"]
             overlap_str = f"{overlap:.2f}%" if overlap > 0 else "N/A"
 
+            # Estimate overpass time (consistent for all dates at this location)
+            estimated_time_str = ""
             if data["dates"]:
-                dates_str = format_date_lines(data["dates"])
+                # Estimate time from first date (time is same for all passes at this location)
+                first_date = data["dates"][0]
+                estimated_dt = estimate_landsat_overpass_time(first_date, lat, lon)
+                estimated_time_str = f" at ~{estimated_dt.strftime('%H:%M')} UTC"
+                if not header_time_str:
+                    header_time_str = estimated_time_str
+
+                # Format dates with time header (like the popup format)
+                formatted_dates = format_date_lines(data["dates"])
+                dates_str = formatted_dates
             else:
                 dates_str = "No Landsat passes found."
 
@@ -467,17 +670,62 @@ def next_landsat_pass(
                 )
                 dates_str = f"{dates_str}\n{warning_text}"
 
-            row_data = [direction, path, rows_str, mission, dates_str, overlap_str]
-            summary = "\n".join(
-                [
-                    f"Direction: {direction}",
-                    f"Path: {path}",
-                    f"Row: {rows_str}",
-                    f"Mission: {mission}",
-                    f"Passes UTC dates (P for past):\n{dates_str}",
-                    f"AOI % Overlap: {overlap_str}",
-                ]
-            )
+            # Tide data (if available) - use "nearest" station only (same as Sentinel)
+            tide_str = "N/A"
+            if arg_tide and key in tide_data_by_key:
+                tide_results = tide_data_by_key[key]
+                if tide_results:
+                    # Extract "nearest" field from each result (same as Sentinel)
+                    tide_values = [
+                        result["nearest"] if (isinstance(result, dict) and "nearest" in result) else "N/A"
+                        for result in tide_results
+                    ]
+                    tide_str = ", ".join(tide_values)
+
+            row_data = [
+                direction,
+                path,
+                rows_str,
+                mission,
+                dates_str,
+                overlap_str,
+            ]
+            if arg_tide:
+                row_data.append(tide_str)
+
+            summary_parts = [
+                f"Direction: {direction}",
+                f"Path: {path}",
+                f"Row: {rows_str}",
+                f"Mission: {mission}",
+                f"Passes dates{estimated_time_str} (P for past):\n{dates_str}",
+                f"AOI % Overlap: {overlap_str}",
+            ]
+            if arg_tide:
+                tide_lines = "N/A"
+                if key in tide_data_by_key and tide_data_by_key[key]:
+                    by_station: dict = {}
+                    for result in tide_data_by_key[key]:
+                        if isinstance(result, dict) and "per_station" in result:
+                            for sid, val in result["per_station"].items():
+                                by_station.setdefault(sid, []).append(val)
+                    if by_station:
+                        station_ids = list(by_station.keys())
+                        prefix_len = 0
+                        if len(station_ids) > 1:
+                            for chars in zip(*station_ids):
+                                if len(set(chars)) == 1:
+                                    prefix_len += 1
+                                else:
+                                    break
+                        tide_lines = "\n".join(
+                            f"{'*' * prefix_len}{sid[prefix_len:]}: {', '.join(vals)}"
+                            for sid, vals in by_station.items()
+                        )
+                summary_parts.append(
+                    f"Tide in m, MLLW (High/Low):\n{tide_lines}"
+                )
+            summary = "\n".join(summary_parts)
 
             # Include key for geometry ordering
             row_data_with_keys.append((overlap, row_data, key, summary))
@@ -494,21 +742,38 @@ def next_landsat_pass(
                 merged = unary_union(polygons)
                 geometry_data.append(merged)
 
+        # Time-accuracy annotation appears in header only when we have an estimated time
+        time_accuracy_str = " ±15-40 min" if header_time_str else ""
+        headers = [
+            "Direction",
+            "Path",
+            "Row",
+            "Mission",
+            f"Acquisition Dates{header_time_str}{time_accuracy_str} (P for past)",
+            "AOI % Overlap",
+        ]
+        if arg_tide:
+            headers.append("Tide in m, MLLW (HH/H/LL/L)")
+
+        table_output = tabulate(
+            table_data,
+            headers=headers,
+            tablefmt="grid",
+        )
+
+        # Accuracy disclaimer: Landsat overpass times are estimated (not from acquisition plans)
+        if header_time_str:
+            table_output += "\n\nNote: Overpass times are estimates based on orbital specifications (±15-40 minutes accuracy)."
+
+        # Add summary about future passes if any were filtered
+        if arg_tide and future_passes_count > 0:
+            table_output += f"\nNote: {future_passes_count} additional pass{'es' if future_passes_count > 1 else ''} scheduled between {future_passes_min_date.strftime('%Y-%m-%d')} and {future_passes_max_date.strftime('%Y-%m-%d')} — dates and tide predictions are not displayed for readability."
+
         return {
-            "next_collect_info": tabulate(
-                table_data,
-                headers=[
-                    "Direction",
-                    "Path",
-                    "Row",
-                    "Mission",
-                    "Passes UTC dates (P for past)",
-                    "AOI % Overlap",
-                ],
-                tablefmt="grid",
-            ),
+            "next_collect_info": table_output,
             "next_collect_geometry": geometry_data,
             "next_collect_summary": summaries,
+            "noaa_stations": noaa_stations if arg_tide else None,
         }
 
     except Exception as error:  # noqa: BLE001
