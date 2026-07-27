@@ -100,12 +100,6 @@ Releases are automated via GitHub Actions when a version tag is pushed.
    - Publishes to PyPI (requires `PYPI_API_TOKEN` secret)
    - Creates GitHub release with auto-generated changelog
 
-### First-time PyPI Setup
-
-Add your PyPI API token to GitHub repository secrets:
-1. Generate token at https://pypi.org/manage/account/token/
-2. Add as `PYPI_API_TOKEN` in repository Settings → Secrets → Actions
-
 ### Version Numbering
 
 Follow [Semantic Versioning](https://semver.org/):
