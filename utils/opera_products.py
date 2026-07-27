@@ -259,7 +259,8 @@ def export_opera_products(
             "HLS Download URL (B04/Red)", 
             "HLS Download URL (B03/Green)", 
             "HLS Download URL (B02/Blue)",
-            "HLS Download URL (B8A/B05/NIR)"
+            "HLS Download URL (B8A/B05/NIR)",
+            "HLS Download URL (Fmask)"
         ])
     ws.append(headers)
 
@@ -383,6 +384,7 @@ def export_opera_products(
                 hls_green = "N/A"
                 hls_blue = "N/A"
                 hls_nir = "N/A"
+                hls_fmask = "N/A"
                 
                 if "HLS" in dataset:
                     hls_links = []
@@ -437,9 +439,11 @@ def export_opera_products(
                                 hls_nir = href
                             elif "L30" in hls_granule_id and ("B05" in href or "band05" in href.lower()):
                                 hls_nir = href
+                            elif "Fmask" in href or "fmask" in href.lower():
+                                hls_fmask = href
 
-                # Appends all 5 elements to keep data rows and headers perfectly 1-to-1
-                row_data.extend([hls_granule_id, hls_red, hls_green, hls_blue, hls_nir])
+                # Appends all 6 elements to keep data rows and headers perfectly 1-to-1
+                row_data.extend([hls_granule_id, hls_red, hls_green, hls_blue, hls_nir, hls_fmask])
 
             ws.append(row_data)
             

@@ -398,10 +398,9 @@ def main(cli_args: Any = None):
         )
         export_opera_products(
             results_opera,
-            results_opera,
             timestamp_dir,
             compute_cloudiness=args.cloudiness,
-            include_hls=getattr(args, 'include_hls', False)
+            include_hls=getattr(args, "include_hls", False),
         )
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 
