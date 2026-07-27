@@ -8,7 +8,9 @@ import utils.tide_prediction as tide_prediction
 
 
 def test_ensure_station_cache_defaults_to_scratch(monkeypatch, tmp_path):
-    payload = {"stations": [{"id": "9432780", "name": "LA", "lat": "34.0", "lng": "-118.0"}]}
+    payload = {
+        "stations": [{"id": "9432780", "name": "LA", "lat": "34.0", "lng": "-118.0"}]
+    }
 
     class FakeResponse:
         def raise_for_status(self):
@@ -18,7 +20,9 @@ def test_ensure_station_cache_defaults_to_scratch(monkeypatch, tmp_path):
             return payload
 
     monkeypatch.setattr(tide_prediction, "SCRATCH_DIR", tmp_path)
-    monkeypatch.setattr(tide_prediction.requests, "get", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(
+        tide_prediction.requests, "get", lambda *args, **kwargs: FakeResponse()
+    )
     monkeypatch.setattr(tide_prediction, "_STATIONS_CACHE", None)
 
     tide_prediction.ensure_station_cache()
@@ -29,7 +33,9 @@ def test_ensure_station_cache_defaults_to_scratch(monkeypatch, tmp_path):
 
 
 def test_get_stations_in_aoi_point_returns_nearest_three_within_50km(monkeypatch):
-    monkeypatch.setattr(tide_prediction, "ensure_station_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tide_prediction, "ensure_station_cache", lambda *args, **kwargs: None
+    )
     monkeypatch.setattr(
         tide_prediction,
         "get_stations",
@@ -47,7 +53,9 @@ def test_get_stations_in_aoi_point_returns_nearest_three_within_50km(monkeypatch
 
 
 def test_get_stations_in_aoi_polygon_falls_back_to_nearby_only(monkeypatch):
-    monkeypatch.setattr(tide_prediction, "ensure_station_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        tide_prediction, "ensure_station_cache", lambda *args, **kwargs: None
+    )
     monkeypatch.setattr(
         tide_prediction,
         "get_stations",
