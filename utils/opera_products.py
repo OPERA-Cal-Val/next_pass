@@ -177,15 +177,12 @@ def fetch_hls_granule_links(granule_id: str) -> list:
     """Fetch the CMR metadata for a specific HLS granule ID to get download links."""
     collection = "HLSS30" if "S30" in granule_id else "HLSL30"
     try:
-        results = earthaccess.search_data(
-            short_name=collection,
-            granule_ur=granule_id
-        )
+        results = earthaccess.search_data(short_name=collection, granule_ur=granule_id)
         if results:
             return results[0].data_links()
     except Exception as e:
         LOGGER.error("Failed to fetch HLS granule %s: %s", granule_id, e)
-    
+
     return []
 
 
@@ -205,11 +202,11 @@ def describe_cloud_cover(cover_percent: float) -> str:
 
 
 def export_opera_products(
-        results_dict: dict,
-        timestamp_dir,
-        result_s1=None,
-        compute_cloudiness: bool = True,
-        include_hls: bool = False
+    results_dict: dict,
+    timestamp_dir,
+    result_s1=None,
+    compute_cloudiness: bool = True,
+    include_hls: bool = False,
 ) -> None:
     """
     Export OPERA products to an Excel file and log cloudiness summary.
@@ -254,14 +251,16 @@ def export_opera_products(
     ]
 
     if include_hls:
-        headers.extend([
-            "Source HLS Granule ID", 
-            "HLS Download URL (B04/Red)", 
-            "HLS Download URL (B03/Green)", 
-            "HLS Download URL (B02/Blue)",
-            "HLS Download URL (B8A/B05/NIR)",
-            "HLS Download URL (Fmask)"
-        ])
+        headers.extend(
+            [
+                "Source HLS Granule ID",
+                "HLS Download URL (B04/Red)",
+                "HLS Download URL (B03/Green)",
+                "HLS Download URL (B02/Blue)",
+                "HLS Download URL (B8A/B05/NIR)",
+                "HLS Download URL (Fmask)",
+            ]
+        )
     ws.append(headers)
 
     # Apply bold to header cells
@@ -385,37 +384,47 @@ def export_opera_products(
                 hls_blue = "N/A"
                 hls_nir = "N/A"
                 hls_fmask = "N/A"
-                
+
                 if "HLS" in dataset:
                     hls_links = []
-                    
+
                     # Try to extract directly from InputGranules (Standard for DSWx)
                     input_granules = umm.get("InputGranules", [])
-                    raw_hls = next((g for g in input_granules if g.startswith("HLS.")), "N/A")
-                    
+                    raw_hls = next(
+                        (g for g in input_granules if g.startswith("HLS.")), "N/A"
+                    )
+
                     if raw_hls != "N/A":
                         parts = raw_hls.split(".")
-                        hls_granule_id = ".".join(parts[:6]) if len(parts) >= 6 else raw_hls
+                        hls_granule_id = (
+                            ".".join(parts[:6]) if len(parts) >= 6 else raw_hls
+                        )
                         hls_links = fetch_hls_granule_links(hls_granule_id)
-                        
+
                     # Fallback: Search CMR dynamically via Tile ID and Date (Required for DIST)
                     else:
                         try:
                             # Extract Tile ID (e.g., T11SLT) from the OPERA GranuleUR
-                            parts = granule_id.split('_')
-                            tile_id = next((p for p in parts if p.startswith('T') and len(p) == 6), None)
-                            
+                            parts = granule_id.split("_")
+                            tile_id = next(
+                                (p for p in parts if p.startswith("T") and len(p) == 6),
+                                None,
+                            )
+
                             if tile_id and start_time != "N/A":
                                 date_only = start_time.split("T")[0]
                                 search_bounds = geom.bounds if geom else None
-                                
+
                                 # Query CMR for all HLS granules on that day over the bounding box
                                 hls_results = earthaccess.search_data(
                                     short_name=["HLSS30", "HLSL30"],
-                                    temporal=(f"{date_only}T00:00:00", f"{date_only}T23:59:59"),
-                                    bounding_box=search_bounds
+                                    temporal=(
+                                        f"{date_only}T00:00:00",
+                                        f"{date_only}T23:59:59",
+                                    ),
+                                    bounding_box=search_bounds,
                                 )
-                                
+
                                 # Filter the results to find the one matching the exact Tile ID
                                 for r in hls_results:
                                     g_name = r.get("umm", {}).get("GranuleUR", "")
@@ -424,8 +433,10 @@ def export_opera_products(
                                         hls_granule_id = ".".join(g_name.split(".")[:6])
                                         break
                         except Exception as e:
-                            LOGGER.warning(f"Failed to dynamically locate HLS granule for {granule_id}: {e}")
-                            
+                            LOGGER.warning(
+                                f"Failed to dynamically locate HLS granule for {granule_id}: {e}"
+                            )
+
                     # Map bands based on HLSS30 or HLSL30 naming conventions
                     for href in hls_links:
                         if href.endswith(".tif"):
@@ -435,18 +446,24 @@ def export_opera_products(
                                 hls_green = href
                             elif "B02" in href or "band02" in href.lower():
                                 hls_blue = href
-                            elif "S30" in hls_granule_id and ("B8A" in href or "band8a" in href.lower()):
+                            elif "S30" in hls_granule_id and (
+                                "B8A" in href or "band8a" in href.lower()
+                            ):
                                 hls_nir = href
-                            elif "L30" in hls_granule_id and ("B05" in href or "band05" in href.lower()):
+                            elif "L30" in hls_granule_id and (
+                                "B05" in href or "band05" in href.lower()
+                            ):
                                 hls_nir = href
                             elif "Fmask" in href or "fmask" in href.lower():
                                 hls_fmask = href
 
                 # Appends all 6 elements to keep data rows and headers perfectly 1-to-1
-                row_data.extend([hls_granule_id, hls_red, hls_green, hls_blue, hls_nir, hls_fmask])
+                row_data.extend(
+                    [hls_granule_id, hls_red, hls_green, hls_blue, hls_nir, hls_fmask]
+                )
 
             ws.append(row_data)
-            
+
         if compute_cloudiness and overall_area > 0:
             overall_cloud_cover_percent = 100.0 * (overall_cloudy_area / overall_area)
             cover_description = describe_cloud_cover(overall_cloud_cover_percent)
