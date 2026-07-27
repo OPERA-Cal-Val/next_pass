@@ -185,8 +185,13 @@ class FakeTransform:
         maxima = {}
         for row in self.frame.rows:
             key = tuple(row.get(col) for col in self.group_cols)
-            maxima[key] = max(maxima.get(key, row[self.column_name]), row[self.column_name])
-        return [maxima[tuple(row.get(col) for col in self.group_cols)] for row in self.frame.rows]
+            maxima[key] = max(
+                maxima.get(key, row[self.column_name]), row[self.column_name]
+            )
+        return [
+            maxima[tuple(row.get(col) for col in self.group_cols)]
+            for row in self.frame.rows
+        ]
 
 
 class FakeFrame:
@@ -227,7 +232,9 @@ class FakeFrame:
             features.append(
                 {
                     "type": "Feature",
-                    "properties": {key: value for key, value in row.items() if key != "geometry"},
+                    "properties": {
+                        key: value for key, value in row.items() if key != "geometry"
+                    },
                     "geometry": {"type": "Polygon", "coordinates": [coords]},
                 }
             )
@@ -310,7 +317,9 @@ class FakeFrame:
         if isinstance(key, list):
             if all(isinstance(item, bool) for item in key):
                 return FakeFrame([row for row, keep in zip(self.rows, key) if keep])
-            return FakeFrame([{column: row.get(column) for column in key} for row in self.rows])
+            return FakeFrame(
+                [{column: row.get(column) for column in key} for row in self.rows]
+            )
         raise TypeError(key)
 
     def __setitem__(self, key, value):
@@ -395,14 +404,24 @@ class FakeGeometry:
 
 class FakePoint(FakeGeometry):
     def __init__(self, x=0.0, y=0.0):
-        super().__init__(name="point", area=0.0, geom_type="Point", centroid_x=x, centroid_y=y)
+        super().__init__(
+            name="point", area=0.0, geom_type="Point", centroid_x=x, centroid_y=y
+        )
         self.x = x
         self.y = y
         self.centroid = self
 
 
 class FakePolygon(FakeGeometry):
-    def __init__(self, name="polygon", area=10.0, centroid_x=0.0, centroid_y=0.0, empty=False, valid=True):
+    def __init__(
+        self,
+        name="polygon",
+        area=10.0,
+        centroid_x=0.0,
+        centroid_y=0.0,
+        empty=False,
+        valid=True,
+    ):
         super().__init__(
             name=name,
             area=area,
