@@ -94,3 +94,27 @@ addopts = [
     "--strict-config",
     "-ra",
 ]
+markers = [
+    "integration: marks tests as integration tests (hitting live APIs)",
+    "slow: marks tests as slow running",
+]
+
+[tool.coverage.run]
+source = ["utils", "."]
+omit = [
+    "tests/*",
+    "setup.py",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]

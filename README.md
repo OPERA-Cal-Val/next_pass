@@ -1,5 +1,10 @@
 # NEXT PASS
 
+[![CI](https://github.com/OPERA-Cal-Val/next_pass/actions/workflows/ci.yml/badge.svg)](https://github.com/OPERA-Cal-Val/next_pass/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/OPERA-Cal-Val/next_pass/branch/main/graph/badge.svg)](https://codecov.io/gh/OPERA-Cal-Val/next_pass)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 Predict the **next satellite overpass** for a point, bounding box, or KML AOI — supporting **Sentinel‑1**, **Sentinel‑2**, **Landsat‑8**, **Landsat‑9**, and **NISAR**.
 Optionally filter by **OPERA product families**, **estimate cloudiness** for the upcoming pass, and **email** results.
 
