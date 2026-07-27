@@ -134,6 +134,11 @@ def create_parser() -> argparse.ArgumentParser:
             "in format YYYY-MM-DDTHH:MM"
         ),
     )
+    parser.add_argument(
+        "--include-hls",
+        action="store_true",
+        help="Fetch and append corresponding source HLS scenes for OPERA HLS products.",
+    )
     return parser
 
 
@@ -256,6 +261,7 @@ def run_next_pass(
     compute_tide: bool = False,
     products: List[str] | str | None = None,
     satellites: List[str] | str | None = None,
+    include_hls: bool = False,
 ):
     """
     Programmatic entry point for next_pass.
@@ -286,6 +292,8 @@ def run_next_pass(
         cli_args.append("-c")
     if compute_tide:
         cli_args.append("-t")
+    if include_hls:
+        cli_args.append("--include-hls")
 
     if date:
         cli_args += ["-d", date]
@@ -389,7 +397,10 @@ def main(cli_args: Any = None):
             timestamp_dir,
         )
         export_opera_products(
-            results_opera, timestamp_dir, compute_cloudiness=args.cloudiness
+            results_opera,
+            timestamp_dir,
+            compute_cloudiness=args.cloudiness,
+            include_hls=getattr(args, "include_hls", False),
         )
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 
