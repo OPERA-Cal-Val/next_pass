@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import pytest
 
 import utils.opera_products as opera_products
-
 from tests.helpers import FakeFrame, FakePolygon
 
 
@@ -19,16 +18,29 @@ def test_describe_cloud_cover_thresholds():
 
 def test_find_print_available_opera_products_validates_date_range(tmp_path):
     with pytest.raises(ValueError):
-        opera_products.find_print_available_opera_products(["34.2", "-118.17"], 2, "2026-03-10/2026-03-01", None, tmp_path)
+        opera_products.find_print_available_opera_products(
+            ["34.2", "-118.17"], 2, "2026-03-10/2026-03-01", None, tmp_path
+        )
 
 
-def test_find_print_available_opera_products_prefixes_products_and_trims_dates(monkeypatch, tmp_path):
+def test_find_print_available_opera_products_prefixes_products_and_trims_dates(
+    monkeypatch, tmp_path
+):
     searches = []
     rows = FakeFrame(
         [
-            {"BeginningDateTime": datetime(2026, 3, 20, 10, tzinfo=timezone.utc), "geometry": FakePolygon("g1")},
-            {"BeginningDateTime": datetime(2026, 3, 20, 12, tzinfo=timezone.utc), "geometry": FakePolygon("g2")},
-            {"BeginningDateTime": datetime(2026, 3, 18, 8, tzinfo=timezone.utc), "geometry": FakePolygon("g3")},
+            {
+                "BeginningDateTime": datetime(2026, 3, 20, 10, tzinfo=timezone.utc),
+                "geometry": FakePolygon("g1"),
+            },
+            {
+                "BeginningDateTime": datetime(2026, 3, 20, 12, tzinfo=timezone.utc),
+                "geometry": FakePolygon("g2"),
+            },
+            {
+                "BeginningDateTime": datetime(2026, 3, 18, 8, tzinfo=timezone.utc),
+                "geometry": FakePolygon("g3"),
+            },
         ]
     )
 
@@ -61,7 +73,9 @@ def test_find_print_available_opera_products_prefixes_products_and_trims_dates(m
     assert len(result["OPERA_L2_RTC-S1_V1"]["results"]) == 2
 
 
-def test_export_opera_products_writes_workbook_and_skips_cloudiness_when_disabled(tmp_path):
+def test_export_opera_products_writes_workbook_and_skips_cloudiness_when_disabled(
+    tmp_path,
+):
     geometry = FakePolygon("geom")
     results_dict = {
         "OPERA_L3_DSWX-HLS_V1": {

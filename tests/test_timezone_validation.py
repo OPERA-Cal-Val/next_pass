@@ -9,15 +9,16 @@ This test verifies that the timezone validation enhancement works correctly:
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from io import StringIO
+
 from shapely.geometry import Point
 
 # Set up logging to capture warnings
 log_stream = StringIO()
 handler = logging.StreamHandler(log_stream)
 handler.setLevel(logging.WARNING)
-formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
 handler.setFormatter(formatter)
 
 logger = logging.getLogger("tide_prediction")
@@ -54,8 +55,9 @@ def test_utc_datetime():
         pass  # Expected to fail with no stations
 
     warnings = log_stream.getvalue()
-    assert "timezone" not in warnings.lower() and "naive" not in warnings.lower(), \
-        f"Unexpected warning: {warnings}"
+    assert (
+        "timezone" not in warnings.lower() and "naive" not in warnings.lower()
+    ), f"Unexpected warning: {warnings}"
     print("  ✅ PASS: No timezone warnings")
 
 
@@ -70,9 +72,7 @@ def test_non_utc_datetime():
         def __init__(self):
             # PST is UTC-8
             pst = timezone(timedelta(hours=-8))
-            self._data = {
-                "begin_date": datetime(2026, 6, 28, 10, 0, 0, tzinfo=pst)
-            }
+            self._data = {"begin_date": datetime(2026, 6, 28, 10, 0, 0, tzinfo=pst)}
 
         def __getitem__(self, key):
             return self._data[key]
@@ -87,8 +87,9 @@ def test_non_utc_datetime():
         pass  # Expected to fail with no stations
 
     warnings = log_stream.getvalue()
-    assert "Non-UTC datetime detected" in warnings, \
-        f"Expected warning not found. Got: {warnings}"
+    assert (
+        "Non-UTC datetime detected" in warnings
+    ), f"Expected warning not found. Got: {warnings}"
     print(f"  ✅ PASS: Got expected warning: {warnings.strip()}")
 
 
@@ -117,8 +118,9 @@ def test_naive_datetime():
         pass  # Expected to fail with no stations
 
     warnings = log_stream.getvalue()
-    assert "Naive datetime detected" in warnings, \
-        f"Expected warning not found. Got: {warnings}"
+    assert (
+        "Naive datetime detected" in warnings
+    ), f"Expected warning not found. Got: {warnings}"
     print(f"  ✅ PASS: Got expected warning: {warnings.strip()}")
 
 

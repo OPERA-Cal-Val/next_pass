@@ -5,7 +5,6 @@ from datetime import date
 import pytest
 
 import utils.landsat_pass as landsat_pass
-
 from tests.helpers import FakePoint, FakePolygon
 
 
@@ -23,12 +22,7 @@ def test_shapely_to_esri_json_supports_point_and_polygon():
 
 def test_build_cycle_sequence_and_path_mapping_validate_inputs():
     cycle_sequence = landsat_pass._build_cycle_sequence(
-        {
-            "landsat_8": {
-                f"1/{index}/1970": {"cycle": index}
-                for index in range(1, 17)
-            }
-        }
+        {"landsat_8": {f"1/{index}/1970": {"cycle": index} for index in range(1, 17)}}
     )
     mission_paths = landsat_pass._build_mission_cycle_paths(
         {
@@ -54,7 +48,9 @@ def test_load_landsat_schedule_source_prefers_modern(monkeypatch):
         },
     ]
 
-    monkeypatch.setattr(landsat_pass, "_fetch_json", lambda url, session: payloads.pop(0))
+    monkeypatch.setattr(
+        landsat_pass, "_fetch_json", lambda url, session: payloads.pop(0)
+    )
 
     result = landsat_pass.load_landsat_schedule_source(session=object())
 
@@ -86,7 +82,9 @@ def test_load_landsat_schedule_source_falls_back_to_legacy(monkeypatch):
     assert result.latest_legacy_date == date(2025, 12, 31)
 
 
-def test_load_landsat_schedule_source_marks_unavailable_when_all_fetches_fail(monkeypatch):
+def test_load_landsat_schedule_source_marks_unavailable_when_all_fetches_fail(
+    monkeypatch,
+):
     def fake_fetch(url, session):
         raise landsat_pass.requests.RequestException("offline")
 
@@ -123,7 +121,16 @@ def test_ll2pr_parses_both_directions(monkeypatch):
             self.calls.append((query_url, params["where"], data))
             mode = params["where"]
             if mode == "MODE='A'":
-                return FakeResponse({"features": [{"attributes": {"PATH": 101, "ROW": 22}, "geometry": {"rings": []}}]})
+                return FakeResponse(
+                    {
+                        "features": [
+                            {
+                                "attributes": {"PATH": 101, "ROW": 22},
+                                "geometry": {"rings": []},
+                            }
+                        ]
+                    }
+                )
             return FakeResponse({"features": []})
 
     session = FakeSession()
@@ -187,7 +194,11 @@ def test_next_landsat_pass_aggregates_geometry_and_warnings(monkeypatch):
         "unary_union",
         lambda polygons: FakePolygon("merged", area=sum(p.area for p in polygons)),
     )
-    monkeypatch.setattr(landsat_pass, "tabulate", lambda rows, headers=None, tablefmt=None: "formatted-table")
+    monkeypatch.setattr(
+        landsat_pass,
+        "tabulate",
+        lambda rows, headers=None, tablefmt=None: "formatted-table",
+    )
 
     result = landsat_pass.next_landsat_pass(
         lat=34.2,

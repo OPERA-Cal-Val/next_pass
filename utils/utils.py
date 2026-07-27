@@ -1,26 +1,22 @@
 import argparse
+import json
 import logging
 import os
 import re
-import json
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
-from urllib.parse import urljoin
-from shapely.geometry import shape, Polygon
-from shapely import LinearRing, Point
-from lxml import etree
-from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
+from zoneinfo import ZoneInfo
+
 import geopandas as gpd
 import requests
 from bs4 import BeautifulSoup
 from lxml import etree
-from shapely import LinearRing, Point, Polygon, wkt
-from shapely.geometry import shape, box
+from shapely import LinearRing, Point, wkt
+from shapely.geometry import Polygon, box, shape
 from timezonefinder import TimezoneFinder
-from zoneinfo import ZoneInfo
-from urllib.parse import urlparse
 
 LOGGER = logging.getLogger("acquisition_utils")
 
@@ -34,7 +30,7 @@ LANDSAT_EQUATORIAL_CROSSING_HOUR = 10.2  # 10:12 AM in decimal hours
 
 # NISAR nodal crossing times (local solar time)
 # Source: https://science.nasa.gov/mission/nisar/mission-overview/
-NISAR_ASCENDING_CROSSING_HOUR = 6.0    # 6:00 AM local
+NISAR_ASCENDING_CROSSING_HOUR = 6.0  # 6:00 AM local
 NISAR_DESCENDING_CROSSING_HOUR = 18.0  # 6:00 PM local
 
 # Earth rotates 15° of longitude per hour (360° / 24 hours)
@@ -45,7 +41,7 @@ HOURS_PER_LONGITUDE_DEGREE = 15.0
 # API and service limits
 # ============================================================================
 
-# NOAA tide prediction only supports forecasts up to ~60 days in the future for Landsat and NISAR to improve output readability 
+# NOAA tide prediction only supports forecasts up to ~60 days in the future for Landsat and NISAR to improve output readability
 TIDE_PREDICTION_WINDOW_DAYS = 60
 
 
@@ -107,8 +103,12 @@ def parse_placemark(placemark: etree.Element) -> Optional[Tuple]:
     ns = ".//{http://www.opengis.net/kml/2.2}"
     # Replace 'Z' with '+00:00' for Python 3.10 compatibility
     # Sentinel KML files use ISO format with 'Z' suffix (e.g., "2026-06-28T18:03:59Z")
-    begin_date = datetime.fromisoformat(placemark.find(f"{ns}begin").text.replace("Z", "+00:00"))
-    end_date = datetime.fromisoformat(placemark.find(f"{ns}end").text.replace("Z", "+00:00"))
+    begin_date = datetime.fromisoformat(
+        placemark.find(f"{ns}begin").text.replace("Z", "+00:00")
+    )
+    end_date = datetime.fromisoformat(
+        placemark.find(f"{ns}end").text.replace("Z", "+00:00")
+    )
 
     data = placemark.find(f"{ns}ExtendedData")
     mode = data.find(f"{ns}Data[@name='Mode']/{ns}value").text
@@ -187,10 +187,10 @@ def find_intersecting_collects(
     aoi_proj = aoi_series.to_crs(projected_crs)
 
     intersects["intersection_pct"] = (
-                100 * intersects_proj.geometry
-                .intersection(aoi_proj.iloc[0]).area
-                / aoi_proj.area.iloc[0]
-            )
+        100
+        * intersects_proj.geometry.intersection(aoi_proj.iloc[0]).area
+        / aoi_proj.area.iloc[0]
+    )
     return intersects.sort_values(
         ["intersection_pct", "begin_date"],
         ascending=[False, True],
@@ -246,7 +246,11 @@ def geometry_from_file(path: str | Path):
         # FeatureCollection
         if data["type"] == "FeatureCollection":
             geometries = [shape(f["geometry"]) for f in data["features"]]
-            return geometries[0] if len(geometries) == 1 else gpd.GeoSeries(geometries).unary_union
+            return (
+                geometries[0]
+                if len(geometries) == 1
+                else gpd.GeoSeries(geometries).unary_union
+            )
 
         # Single geometry or Feature
         return shape(data.get("geometry", data))
@@ -270,13 +274,14 @@ def bbox_type(arg_coords):
         arg_coords = [arg_coords]
 
     if (
-        len(arg_coords) == 1
-        and arg_coords[0].lower().endswith((".kml", ".geojson"))
-        and os.path.isfile(arg_coords[0])
-    ) or (
-         len(arg_coords) == 1
-         and arg_coords[0].startswith(("POINT", "POLYGON"))
-    ) or (is_url(arg_coords[0])):
+        (
+            len(arg_coords) == 1
+            and arg_coords[0].lower().endswith((".kml", ".geojson"))
+            and os.path.isfile(arg_coords[0])
+        )
+        or (len(arg_coords) == 1 and arg_coords[0].startswith(("POINT", "POLYGON")))
+        or (is_url(arg_coords[0]))
+    ):
         return arg_coords[0]
 
     try:
@@ -326,8 +331,7 @@ def bbox_type(arg_coords):
 
     except ValueError:
         raise argparse.ArgumentTypeError(
-            "Provide either 2 or 4 float values "
-            "or a path to a valid .kml file."
+            "Provide either 2 or 4 float values " "or a path to a valid .kml file."
         )
 
 
@@ -343,10 +347,7 @@ def bbox_to_geometry(bbox, timestamp_dir):
                 filename = "AOI_from_url.geojson"
                 file_path = Path(timestamp_dir) / filename
                 if not file_path.exists():
-                    bbox_path = download_url_to_file(
-                        bbox_clean,
-                        file_path
-                    )
+                    bbox_path = download_url_to_file(bbox_clean, file_path)
                 else:
                     bbox_path = Path(file_path)
             # if path (kml or geojson)
@@ -430,8 +431,7 @@ def is_date_in_text(iso_date_str: str, text: str) -> bool:
     return date_only_str in dates_in_text
 
 
-def style_function_factory(dataset_color: str,
-                           inactive_color: str = "lightgray"):
+def style_function_factory(dataset_color: str, inactive_color: str = "lightgray"):
     def style_function(feature):
         ok = feature["properties"].get("condition_ok")
         if ok is True:
@@ -448,6 +448,7 @@ def style_function_factory(dataset_color: str,
                 "weight": 1,
                 "fillOpacity": 0.3,
             }
+
     return style_function
 
 
@@ -465,10 +466,15 @@ def valid_drcs_datetime(s):
         )
 
 
-def check_opera_overpass_intersection(product_label, product_geom,
-                                      result_s1, result_s2,
-                                      result_l, event_date,
-                                      dataset_name: str | None = None):
+def check_opera_overpass_intersection(
+    product_label,
+    product_geom,
+    result_s1,
+    result_s2,
+    result_l,
+    event_date,
+    dataset_name: str | None = None,
+):
     """
     Check if a given product overlaps with any satellite overpass
     after the event date, and produce a formatted text report.
@@ -516,8 +522,10 @@ def check_opera_overpass_intersection(product_label, product_geom,
         strip = line.strip()
         if not strip.startswith("|") or strip.startswith("|   #"):
             continue
-        if any(key in strip for key in ["Direction", "Path", "Row",
-                                        "Mission", "Passes dates"]):
+        if any(
+            key in strip
+            for key in ["Direction", "Path", "Row", "Mission", "Passes dates"]
+        ):
             continue
         relevant_lines.append(line)
 
@@ -547,21 +555,18 @@ def check_opera_overpass_intersection(product_label, product_geom,
         bbox_tz = ZoneInfo(timezone_name)
 
         # Extract datetimes
-        if sat_name == 'Landsat':
+        if sat_name == "Landsat":
             dt_strings = re.findall(r"\d{2}/\d{2}/\d{4}", line)
             dt_list = [
-                datetime.strptime(dt_str, "%m/%d/%Y"
-                                  ).replace(
-                                    tzinfo=timezone.utc)
+                datetime.strptime(dt_str, "%m/%d/%Y").replace(tzinfo=timezone.utc)
                 for dt_str in dt_strings
             ]
         else:
-            dt_strings = re.findall(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}",
-                                    line)
+            dt_strings = re.findall(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", line)
             dt_list = [
-                datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S"
-                                  ).replace(
-                                    tzinfo=timezone.utc)
+                datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(
+                    tzinfo=timezone.utc
+                )
                 for dt_str in dt_strings
             ]
 
@@ -594,14 +599,16 @@ def check_opera_overpass_intersection(product_label, product_geom,
             dt_local = dt.astimezone()
             dt_bbox = dt.astimezone(bbox_tz)
 
-            if (sat_name == "Landsat"):
-                entry = (f"{dt.strftime('%Y-%m-%d')} "
-                         f": {orbit_info}, {overlap_pct:.1f}% overlap")
+            if sat_name == "Landsat":
+                entry = (
+                    f"{dt.strftime('%Y-%m-%d')} "
+                    f": {orbit_info}, {overlap_pct:.1f}% overlap"
+                )
             else:
-                utc_str = dt.strftime('%Y-%m-%d %H:%M:%S')
-                local_str = dt_local.strftime('%Y-%m-%d %H:%M:%S')
-                bbox_str = dt_bbox.strftime('%Y-%m-%d %H:%M:%S')
-                local_tz_abbrev = dt_local.tzname()     # e.g., "PST"
+                utc_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+                local_str = dt_local.strftime("%Y-%m-%d %H:%M:%S")
+                bbox_str = dt_bbox.strftime("%Y-%m-%d %H:%M:%S")
+                local_tz_abbrev = dt_local.tzname()  # e.g., "PST"
                 bbox_offset = dt_bbox.utcoffset()
                 if bbox_offset is not None:
                     total_minutes = bbox_offset.total_seconds() / 60
@@ -614,7 +621,6 @@ def check_opera_overpass_intersection(product_label, product_geom,
                     f"| Operator TZ: {local_str} ({local_tz_abbrev}) "
                     f"| Event TZ: {bbox_str} ({gmt_str}) "
                     f": {orbit_info}, {overlap_pct:.1f}% overlap "
-                    
                 )
             if dt <= now_utc:
                 past_overpasses.append((dt, entry))
@@ -623,9 +629,11 @@ def check_opera_overpass_intersection(product_label, product_geom,
 
     # Check if we have no overlaps at all
     if not past_overpasses and not future_overpasses:
-        return (f"No overlapping (with AOI) overpasses for "
-                f"{sat_name} after {event_date.strftime(
-                                    '%Y-%m-%d %H:%M:%S')}")
+        return (
+            f"No overlapping (with AOI) overpasses for "
+            f"{sat_name} after {event_date.strftime(
+                                    '%Y-%m-%d %H:%M:%S')}"
+        )
 
     # Sort past: oldest first, future: most recent first
     past_overpasses.sort(key=lambda x: x[0], reverse=False)
@@ -740,7 +748,7 @@ def filter_dates_beyond_window(
                 raise ValueError("date_format required when dates are strings")
             date_obj = datetime.strptime(date_item, date_format).date()
         elif isinstance(date_item, datetime):
-            date_obj = date_item.date() if hasattr(date_item, 'date') else date_item
+            date_obj = date_item.date() if hasattr(date_item, "date") else date_item
         else:
             date_obj = date_item  # Already a date object
 

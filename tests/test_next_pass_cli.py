@@ -7,9 +7,7 @@ import types
 from pathlib import Path
 
 import next_pass
-
 from tests.helpers import FakePoint, FakePolygon
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -211,7 +209,9 @@ def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
     sentinel_calls = []
     sleep_calls = []
 
-    monkeypatch.setattr(next_pass.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(
+        next_pass.time, "sleep", lambda seconds: sleep_calls.append(seconds)
+    )
 
     import utils.cloudiness as cloudiness
     import utils.landsat_pass as landsat_pass
@@ -224,24 +224,33 @@ def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
     monkeypatch.setattr(
         utils_mod,
         "bbox_to_geometry",
-        lambda bbox, timestamp_dir: (FakePolygon("aoi", centroid_x=10, centroid_y=20), (), FakePoint(10, 20)),
+        lambda bbox, timestamp_dir: (
+            FakePolygon("aoi", centroid_x=10, centroid_y=20),
+            (),
+            FakePoint(10, 20),
+        ),
     )
     monkeypatch.setattr(
         sentinel_pass,
         "next_sentinel_pass",
         lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False: sentinel_calls.append(
             (sat, geometry.name, n_day_past, pred_cloudiness)
-        ) or {"next_collect_info": sat},
+        )
+        or {"next_collect_info": sat},
     )
     monkeypatch.setattr(
         nisar_pass,
         "next_nisar_pass",
-        lambda geometry, n_day_past, arg_tide=False: {"next_collect_info": f"nisar-{geometry.name}-{n_day_past}"},
+        lambda geometry, n_day_past, arg_tide=False: {
+            "next_collect_info": f"nisar-{geometry.name}-{n_day_past}"
+        },
     )
     monkeypatch.setattr(
         landsat_pass,
         "next_landsat_pass",
-        lambda lat, lon, geometry, n_day_past, arg_tide=False: {"next_collect_info": f"landsat-{lat}-{lon}-{n_day_past}"},
+        lambda lat, lon, geometry, n_day_past, arg_tide=False: {
+            "next_collect_info": f"landsat-{lat}-{lon}-{n_day_past}"
+        },
     )
 
     args = argparse.Namespace(
@@ -270,12 +279,21 @@ def test_find_next_overpass_routes_single_satellite(monkeypatch, tmp_path):
     monkeypatch.setattr(
         utils_mod,
         "bbox_to_geometry",
-        lambda bbox, timestamp_dir: (FakePolygon("aoi", centroid_x=4, centroid_y=5), (), FakePoint(4, 5)),
+        lambda bbox, timestamp_dir: (
+            FakePolygon("aoi", centroid_x=4, centroid_y=5),
+            (),
+            FakePoint(4, 5),
+        ),
     )
     monkeypatch.setattr(
         landsat_pass,
         "next_landsat_pass",
-        lambda lat, lon, geometry, n_day_past, arg_tide=False: {"lat": lat, "lon": lon, "name": geometry.name, "days": n_day_past},
+        lambda lat, lon, geometry, n_day_past, arg_tide=False: {
+            "lat": lat,
+            "lon": lon,
+            "name": geometry.name,
+            "days": n_day_past,
+        },
     )
 
     args = argparse.Namespace(
@@ -311,22 +329,42 @@ def test_main_runs_requested_outputs_and_email(monkeypatch, tmp_path):
     import utils.opera_products as opera_products
     import utils.plot_maps as plot_maps
 
-    monkeypatch.setattr(next_pass, "find_next_overpass", lambda args, timestamp_dir: {
-        "sentinel-1": {"next_collect_info": "s1"},
-        "sentinel-2": {},
-        "landsat": {},
-        "nisar": {},
-    })
+    monkeypatch.setattr(
+        next_pass,
+        "find_next_overpass",
+        lambda args, timestamp_dir: {
+            "sentinel-1": {"next_collect_info": "s1"},
+            "sentinel-2": {},
+            "landsat": {},
+            "nisar": {},
+        },
+    )
     monkeypatch.setattr(plot_maps, "make_overpasses_map", lambda *args, **kwargs: None)
-    monkeypatch.setattr(plot_maps, "make_opera_granule_map", lambda *args, **kwargs: None)
-    monkeypatch.setattr(plot_maps, "make_opera_granule_drcs_map", lambda *args, **kwargs: None)
-    monkeypatch.setattr(opera_products, "find_print_available_opera_products", lambda *args, **kwargs: {"x": "y"})
-    monkeypatch.setattr(opera_products, "export_opera_products", lambda *args, **kwargs: None)
-    monkeypatch.setattr(next_pass, "send_email", lambda subject, body, attachment=None: sent_email.update({
-        "subject": subject,
-        "body": body,
-        "attachment": attachment,
-    }))
+    monkeypatch.setattr(
+        plot_maps, "make_opera_granule_map", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        plot_maps, "make_opera_granule_drcs_map", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        opera_products,
+        "find_print_available_opera_products",
+        lambda *args, **kwargs: {"x": "y"},
+    )
+    monkeypatch.setattr(
+        opera_products, "export_opera_products", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        next_pass,
+        "send_email",
+        lambda subject, body, attachment=None: sent_email.update(
+            {
+                "subject": subject,
+                "body": body,
+                "attachment": attachment,
+            }
+        ),
+    )
 
     output_dir = next_pass.main(
         [

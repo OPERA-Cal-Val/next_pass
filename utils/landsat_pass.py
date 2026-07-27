@@ -10,14 +10,14 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from tabulate import tabulate
 
+from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
 from utils.utils import (
+    HOURS_PER_LONGITUDE_DEGREE,
+    LANDSAT_EQUATORIAL_CROSSING_HOUR,
+    TIDE_PREDICTION_WINDOW_DAYS,
     arcgis_to_polygon,
     filter_dates_beyond_window,
-    LANDSAT_EQUATORIAL_CROSSING_HOUR,
-    HOURS_PER_LONGITUDE_DEGREE,
-    TIDE_PREDICTION_WINDOW_DAYS,
 )
-from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
 
 logger = logging.getLogger(__name__)
 
@@ -108,11 +108,16 @@ def format_date_lines(date_strings: list[str], per_line: int = 5) -> str:
 
     formatted_dates = [
         date_str
-        + (" (P)" if datetime.strptime(date_str, DATE_FORMAT).replace(tzinfo=timezone.utc) < datetime.now(timezone.utc) else "")
+        + (
+            " (P)"
+            if datetime.strptime(date_str, DATE_FORMAT).replace(tzinfo=timezone.utc)
+            < datetime.now(timezone.utc)
+            else ""
+        )
         for date_str in date_strings
     ]
     return "\n".join(
-        ", ".join(formatted_dates[i:i + per_line])
+        ", ".join(formatted_dates[i : i + per_line])
         for i in range(0, len(formatted_dates), per_line)
     )
 
@@ -168,7 +173,9 @@ def _build_cycle_sequence(cycle_reference_data: dict) -> list[int]:
     return cycle_sequence
 
 
-def _build_mission_cycle_paths(cycle_path_row_data: dict) -> dict[str, dict[int, set[int]]]:
+def _build_mission_cycle_paths(
+    cycle_path_row_data: dict,
+) -> dict[str, dict[int, set[int]]]:
     """Reduce cycle path/row data to mission -> cycle -> available paths."""
     mission_cycle_paths: dict[str, dict[int, set[int]]] = {}
 
@@ -432,7 +439,10 @@ def find_next_landsat_pass(
             current_date,
         )
 
-    return ({mission: [] for mission in LANDSAT_MISSIONS}, list(schedule_source.warnings))
+    return (
+        {mission: [] for mission in LANDSAT_MISSIONS},
+        list(schedule_source.warnings),
+    )
 
 
 def next_landsat_pass(
@@ -486,12 +496,14 @@ def next_landsat_pass(
 
                     for mission, dates in next_pass_dates.items():
                         key = (direction.capitalize(), path, mission.capitalize())
-                        features_by_key[key].append({
-                            "row": row,
-                            "polygon": polygon,
-                            "dates": dates,
-                            "warnings": schedule_warnings,
-                        })
+                        features_by_key[key].append(
+                            {
+                                "row": row,
+                                "polygon": polygon,
+                                "dates": dates,
+                                "warnings": schedule_warnings,
+                            }
+                        )
 
         # Second pass: aggregate features with proper geometry union
         for key, features in features_by_key.items():
@@ -539,15 +551,12 @@ def next_landsat_pass(
                         "tide predictions will be empty"
                     )
             except Exception as e:
-                logger.warning(
-                    "Could not retrieve NOAA stations for AOI: %s", e
-                )
+                logger.warning("Could not retrieve NOAA stations for AOI: %s", e)
                 noaa_stations = None
 
             if noaa_stations:
                 logger.info(
-                    "Calculating tides for Landsat overpasses using %d "
-                    "stations ...",
+                    "Calculating tides for Landsat overpasses using %d " "stations ...",
                     len(noaa_stations),
                 )
                 # Collect ALL target times across all keys into a single batch
@@ -558,9 +567,7 @@ def next_landsat_pass(
                 for key, data in aggregated_data.items():
                     if data["dates"]:
                         estimated_datetimes = [
-                            estimate_landsat_overpass_time(
-                                date_str, lat, lon
-                            )
+                            estimate_landsat_overpass_time(date_str, lat, lon)
                             for date_str in data["dates"]
                         ]
                         # Convert to naive ISO strings (timezone stripped intentionally)
@@ -623,10 +630,16 @@ def next_landsat_pass(
                     # Update tracking variables
                     future_passes_count += count
                     if min_date is not None:
-                        if future_passes_min_date is None or min_date < future_passes_min_date:
+                        if (
+                            future_passes_min_date is None
+                            or min_date < future_passes_min_date
+                        ):
                             future_passes_min_date = min_date
                     if max_date is not None:
-                        if future_passes_max_date is None or max_date > future_passes_max_date:
+                        if (
+                            future_passes_max_date is None
+                            or max_date > future_passes_max_date
+                        ):
                             future_passes_max_date = max_date
 
                     # Only include this row if it has at least one valid date
@@ -677,7 +690,11 @@ def next_landsat_pass(
                 if tide_results:
                     # Extract "nearest" field from each result (same as Sentinel)
                     tide_values = [
-                        result["nearest"] if (isinstance(result, dict) and "nearest" in result) else "N/A"
+                        (
+                            result["nearest"]
+                            if (isinstance(result, dict) and "nearest" in result)
+                            else "N/A"
+                        )
                         for result in tide_results
                     ]
                     tide_str = ", ".join(tide_values)
@@ -722,9 +739,7 @@ def next_landsat_pass(
                             f"{'*' * prefix_len}{sid[prefix_len:]}: {', '.join(vals)}"
                             for sid, vals in by_station.items()
                         )
-                summary_parts.append(
-                    f"Tide in m, MLLW (High/Low):\n{tide_lines}"
-                )
+                summary_parts.append(f"Tide in m, MLLW (High/Low):\n{tide_lines}")
             summary = "\n".join(summary_parts)
 
             # Include key for geometry ordering

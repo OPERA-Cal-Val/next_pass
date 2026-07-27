@@ -3,18 +3,23 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import utils.collection_builder as collection_builder
-
 from tests.helpers import FakeFrame, FakePolygon
 
 
-def test_sync_scratch_directory_deletes_obsolete_and_downloads_missing(monkeypatch, tmp_path):
+def test_sync_scratch_directory_deletes_obsolete_and_downloads_missing(
+    monkeypatch, tmp_path
+):
     logger_messages = {"info": [], "error": []}
     logger = type(
         "Logger",
         (),
         {
-            "info": lambda self, message, *args: logger_messages["info"].append(message % args if args else message),
-            "error": lambda self, message, *args: logger_messages["error"].append(message % args if args else message),
+            "info": lambda self, message, *args: logger_messages["info"].append(
+                message % args if args else message
+            ),
+            "error": lambda self, message, *args: logger_messages["error"].append(
+                message % args if args else message
+            ),
         },
     )()
 
@@ -36,7 +41,9 @@ def test_sync_scratch_directory_deletes_obsolete_and_downloads_missing(monkeypat
     )
 
     assert not obsolete.exists()
-    assert downloads == [("https://example.com/new.kml", str(tmp_path / "sentinel1_new.kml"))]
+    assert downloads == [
+        ("https://example.com/new.kml", str(tmp_path / "sentinel1_new.kml"))
+    ]
     assert local_paths == [tmp_path / "sentinel1_new.kml"]
 
 
@@ -44,7 +51,11 @@ def test_build_sentinel_collection_uses_cached_and_parsed_files(monkeypatch, tmp
     logger = type(
         "Logger",
         (),
-        {"info": lambda *args, **kwargs: None, "warning": lambda *args, **kwargs: None, "error": lambda *args, **kwargs: None},
+        {
+            "info": lambda *args, **kwargs: None,
+            "warning": lambda *args, **kwargs: None,
+            "error": lambda *args, **kwargs: None,
+        },
     )()
 
     kml_a = tmp_path / "sentinel1_alpha.kml"
@@ -56,8 +67,12 @@ def test_build_sentinel_collection_uses_cached_and_parsed_files(monkeypatch, tmp
 
     old_date = datetime.now(timezone.utc) - timedelta(days=40)
     new_date = datetime.now(timezone.utc) - timedelta(days=2)
-    cached_frame = FakeFrame([{"begin_date": old_date, "geometry": FakePolygon("cached")}])
-    parsed_frame = FakeFrame([{"begin_date": new_date, "geometry": FakePolygon("fresh")}])
+    cached_frame = FakeFrame(
+        [{"begin_date": old_date, "geometry": FakePolygon("cached")}]
+    )
+    parsed_frame = FakeFrame(
+        [{"begin_date": new_date, "geometry": FakePolygon("fresh")}]
+    )
 
     monkeypatch.setattr(collection_builder, "SCRATCH_DIR", tmp_path)
     monkeypatch.setattr(
@@ -72,7 +87,9 @@ def test_build_sentinel_collection_uses_cached_and_parsed_files(monkeypatch, tmp
         "concat",
         lambda frames: FakeFrame([row for frame in frames for row in frame.rows]),
     )
-    monkeypatch.setattr(collection_builder.pd, "to_datetime", lambda values, utc=True: values)
+    monkeypatch.setattr(
+        collection_builder.pd, "to_datetime", lambda values, utc=True: values
+    )
 
     output = collection_builder.build_sentinel_collection(
         urls=["https://example.com/alpha.kml", "https://example.com/beta.kml"],
@@ -87,11 +104,17 @@ def test_build_sentinel_collection_uses_cached_and_parsed_files(monkeypatch, tmp
     assert output.exists()
 
 
-def test_build_sentinel_collection_returns_empty_path_when_no_frames(monkeypatch, tmp_path):
+def test_build_sentinel_collection_returns_empty_path_when_no_frames(
+    monkeypatch, tmp_path
+):
     logger = type(
         "Logger",
         (),
-        {"info": lambda *args, **kwargs: None, "warning": lambda *args, **kwargs: None, "error": lambda *args, **kwargs: None},
+        {
+            "info": lambda *args, **kwargs: None,
+            "warning": lambda *args, **kwargs: None,
+            "error": lambda *args, **kwargs: None,
+        },
     )()
 
     monkeypatch.setattr(collection_builder, "SCRATCH_DIR", tmp_path)
@@ -100,7 +123,11 @@ def test_build_sentinel_collection_returns_empty_path_when_no_frames(monkeypatch
         "sync_scratch_directory",
         lambda urls, mission_name, scratch_dir, logger: [tmp_path / "broken.kml"],
     )
-    monkeypatch.setattr(collection_builder, "parse_kml", lambda path: (_ for _ in ()).throw(ValueError("bad kml")))
+    monkeypatch.setattr(
+        collection_builder,
+        "parse_kml",
+        lambda path: (_ for _ in ()).throw(ValueError("bad kml")),
+    )
 
     output = collection_builder.build_sentinel_collection(
         urls=["https://example.com/broken.kml"],
