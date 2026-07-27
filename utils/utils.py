@@ -631,8 +631,7 @@ def check_opera_overpass_intersection(
     if not past_overpasses and not future_overpasses:
         return (
             f"No overlapping (with AOI) overpasses for "
-            f"{sat_name} after {event_date.strftime(
-                                    '%Y-%m-%d %H:%M:%S')}"
+            f"{sat_name} after {event_date.strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
     # Sort past: oldest first, future: most recent first
