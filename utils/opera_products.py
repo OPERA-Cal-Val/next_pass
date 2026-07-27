@@ -173,17 +173,19 @@ def find_print_available_opera_products(
     return results_dict
 
 
-def fetch_hls_granule_links(granule_id: str) -> list:
+def fetch_hls_granule_links(granule_id: str) -> list | None:
     """Fetch the CMR metadata for a specific HLS granule ID to get download links."""
     collection = "HLSS30" if "S30" in granule_id else "HLSL30"
     try:
-        results = earthaccess.search_data(short_name=collection, granule_ur=granule_id)
+        results = earthaccess.search_data(
+            short_name=collection, granule_name=granule_id
+        )
         if results:
             return results[0].data_links()
+        return []
     except Exception as e:
         LOGGER.error("Failed to fetch HLS granule %s: %s", granule_id, e)
-
-    return []
+        return None
 
 
 def describe_cloud_cover(cover_percent: float) -> str:
@@ -390,6 +392,9 @@ def export_opera_products(
 
                     # Try to extract directly from InputGranules (Standard for DSWx)
                     input_granules = umm.get("InputGranules", [])
+
+                    # OPERA HLS products (DSWx/DIST) are mapped 1:1 with source HLS MGRS tiles.
+                    # Because there is only one source scene per product, retrieving the first match is expected.
                     raw_hls = next(
                         (g for g in input_granules if g.startswith("HLS.")), "N/A"
                     )
@@ -401,6 +406,15 @@ def export_opera_products(
                         )
                         hls_links = fetch_hls_granule_links(hls_granule_id)
 
+                        if hls_links is None:
+                            hls_red = hls_green = hls_blue = hls_nir = hls_fmask = (
+                                "API_ERROR"
+                            )
+                        elif not hls_links:
+                            hls_red = hls_green = hls_blue = hls_nir = hls_fmask = (
+                                "NOT_FOUND"
+                            )
+
                     # Fallback: Search CMR dynamically via Tile ID and Date (Required for DIST)
                     else:
                         try:
@@ -411,9 +425,9 @@ def export_opera_products(
                                 None,
                             )
 
-                            if tile_id and start_time != "N/A":
+                            if tile_id and start_time != "N/A" and geom:
                                 date_only = start_time.split("T")[0]
-                                search_bounds = geom.bounds if geom else None
+                                search_bounds = geom.bounds
 
                                 # Query CMR for all HLS granules on that day over the bounding box
                                 hls_results = earthaccess.search_data(
@@ -425,37 +439,48 @@ def export_opera_products(
                                     bounding_box=search_bounds,
                                 )
 
-                                # Filter the results to find the one matching the exact Tile ID
-                                for r in hls_results:
-                                    g_name = r.get("umm", {}).get("GranuleUR", "")
-                                    if f".{tile_id}." in g_name:
-                                        hls_links = r.data_links()
-                                        hls_granule_id = ".".join(g_name.split(".")[:6])
-                                        break
+                                if not hls_results:
+                                    hls_red = hls_green = hls_blue = hls_nir = (
+                                        hls_fmask
+                                    ) = "NOT_FOUND"
+                                else:
+                                    # Filter the results to find the one matching the exact Tile ID
+                                    for r in hls_results:
+                                        g_name = r.get("umm", {}).get("GranuleUR", "")
+                                        if f".{tile_id}." in g_name:
+                                            hls_links = r.data_links()
+                                            hls_granule_id = ".".join(
+                                                g_name.split(".")[:6]
+                                            )
+                                            break
                         except Exception as e:
                             LOGGER.warning(
                                 f"Failed to dynamically locate HLS granule for {granule_id}: {e}"
                             )
+                            hls_red = hls_green = hls_blue = hls_nir = hls_fmask = (
+                                "API_ERROR"
+                            )
 
                     # Map bands based on HLSS30 or HLSL30 naming conventions
-                    for href in hls_links:
-                        if href.endswith(".tif"):
-                            if "B04" in href or "band04" in href.lower():
-                                hls_red = href
-                            elif "B03" in href or "band03" in href.lower():
-                                hls_green = href
-                            elif "B02" in href or "band02" in href.lower():
-                                hls_blue = href
-                            elif "S30" in hls_granule_id and (
-                                "B8A" in href or "band8a" in href.lower()
-                            ):
-                                hls_nir = href
-                            elif "L30" in hls_granule_id and (
-                                "B05" in href or "band05" in href.lower()
-                            ):
-                                hls_nir = href
-                            elif "Fmask" in href or "fmask" in href.lower():
-                                hls_fmask = href
+                    if hls_links:
+                        for href in hls_links:
+                            if href.endswith(".tif"):
+                                if "B04" in href or "band04" in href.lower():
+                                    hls_red = href
+                                elif "B03" in href or "band03" in href.lower():
+                                    hls_green = href
+                                elif "B02" in href or "band02" in href.lower():
+                                    hls_blue = href
+                                elif "S30" in hls_granule_id and (
+                                    "B8A" in href or "band8a" in href.lower()
+                                ):
+                                    hls_nir = href
+                                elif "L30" in hls_granule_id and (
+                                    "B05" in href or "band05" in href.lower()
+                                ):
+                                    hls_nir = href
+                                elif "Fmask" in href or "fmask" in href.lower():
+                                    hls_fmask = href
 
                 # Appends all 6 elements to keep data rows and headers perfectly 1-to-1
                 row_data.extend(

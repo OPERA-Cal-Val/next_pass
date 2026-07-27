@@ -259,9 +259,9 @@ def run_next_pass(
     functionality: str = "both",
     compute_cloudiness: bool = False,
     compute_tide: bool = False,
-    include_hls: bool = False,
     products: List[str] | str | None = None,
     satellites: List[str] | str | None = None,
+    include_hls: bool = False,
 ):
     """
     Programmatic entry point for next_pass.
