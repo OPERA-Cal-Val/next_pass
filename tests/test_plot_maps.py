@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import utils.plot_maps as plot_maps
-
 from tests.helpers import FakeFrame, FakePolygon
 
 
@@ -34,7 +33,16 @@ def test_make_opera_granule_map_creates_output(tmp_path, monkeypatch):
     results = {
         "OPERA_L3_DSWX-HLS_V1": {
             "gdf": gdf,
-            "results": [{"umm": {"GranuleUR": "granule-1", "RelatedUrls": [{"Type": "GET DATA", "URL": "https://example.com/granule"}]}}],
+            "results": [
+                {
+                    "umm": {
+                        "GranuleUR": "granule-1",
+                        "RelatedUrls": [
+                            {"Type": "GET DATA", "URL": "https://example.com/granule"}
+                        ],
+                    }
+                }
+            ],
         }
     }
 
@@ -42,7 +50,11 @@ def test_make_opera_granule_map_creates_output(tmp_path, monkeypatch):
     monkeypatch.setattr(
         plot_maps,
         "bbox_to_geometry",
-        lambda bbox, timestamp_dir: (_make_polygon(plot_maps, "aoi"), None, type("C", (), {"x": 1, "y": 2})()),
+        lambda bbox, timestamp_dir: (
+            _make_polygon(plot_maps, "aoi"),
+            None,
+            type("C", (), {"x": 1, "y": 2})(),
+        ),
     )
 
     plot_maps.make_opera_granule_map(results, [34.2, -118.17], tmp_path)
@@ -56,7 +68,14 @@ def test_make_opera_granule_drcs_map_handles_old_granules(tmp_path, monkeypatch)
     results = {
         "OPERA_L3_DSWX-S1_V1": {
             "gdf": gdf,
-            "results": [{"umm": {"GranuleUR": "OPERA_L3_DSWX-S1_T001_F001_20260320T000000Z", "RelatedUrls": []}}],
+            "results": [
+                {
+                    "umm": {
+                        "GranuleUR": "OPERA_L3_DSWX-S1_T001_F001_20260320T000000Z",
+                        "RelatedUrls": [],
+                    }
+                }
+            ],
         }
     }
 
@@ -64,9 +83,15 @@ def test_make_opera_granule_drcs_map_handles_old_granules(tmp_path, monkeypatch)
     monkeypatch.setattr(
         plot_maps,
         "bbox_to_geometry",
-        lambda bbox, timestamp_dir: (_make_polygon(plot_maps, "aoi"), None, type("C", (), {"x": 1, "y": 2})()),
+        lambda bbox, timestamp_dir: (
+            _make_polygon(plot_maps, "aoi"),
+            None,
+            type("C", (), {"x": 1, "y": 2})(),
+        ),
     )
-    monkeypatch.setattr(plot_maps, "check_opera_overpass_intersection", lambda *args, **kwargs: "report")
+    monkeypatch.setattr(
+        plot_maps, "check_opera_overpass_intersection", lambda *args, **kwargs: "report"
+    )
 
     plot_maps.make_opera_granule_drcs_map(
         datetime(2026, 3, 21, tzinfo=timezone.utc),
@@ -86,9 +111,15 @@ def test_make_overpasses_map_creates_output(tmp_path, monkeypatch):
     monkeypatch.setattr(
         plot_maps,
         "bbox_to_geometry",
-        lambda bbox, timestamp_dir: (_make_polygon(plot_maps, "aoi"), None, type("C", (), {"x": 1, "y": 2})()),
+        lambda bbox, timestamp_dir: (
+            _make_polygon(plot_maps, "aoi"),
+            None,
+            type("C", (), {"x": 1, "y": 2})(),
+        ),
     )
-    monkeypatch.setattr(plot_maps, "hsl_distinct_colors_improved", lambda n: ["#111111"] * max(n, 1))
+    monkeypatch.setattr(
+        plot_maps, "hsl_distinct_colors_improved", lambda n: ["#111111"] * max(n, 1)
+    )
 
     result_s1 = {
         "next_collect_info": "info",
@@ -97,10 +128,15 @@ def test_make_overpasses_map_creates_output(tmp_path, monkeypatch):
     }
     result_l = {
         "next_collect_info": "info",
-        "next_collect_geometry": [_make_polygon(plot_maps, "l8"), _make_polygon(plot_maps, "l9")],
+        "next_collect_geometry": [
+            _make_polygon(plot_maps, "l8"),
+            _make_polygon(plot_maps, "l9"),
+        ],
         "next_collect_summary": ["Ascending mission", "Descending mission"],
     }
 
-    plot_maps.make_overpasses_map(result_s1, None, result_l, None, [34.2, -118.17], tmp_path)
+    plot_maps.make_overpasses_map(
+        result_s1, None, result_l, None, [34.2, -118.17], tmp_path
+    )
 
     assert (tmp_path / "satellite_overpasses_map.html").exists()

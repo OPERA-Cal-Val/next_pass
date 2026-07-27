@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -47,8 +46,7 @@ def test_runtime_dependencies_are_installed():
     )
     missing = result.stdout.strip()
     assert missing == "[]", (
-        "Missing runtime dependencies. Installation is not complete: "
-        + missing
+        "Missing runtime dependencies. Installation is not complete: " + missing
     )
 
 
@@ -88,7 +86,9 @@ def test_core_modules_import_with_real_dependencies():
         f"stdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}"
     )
-    assert result.stdout.strip() == "{}", f"Core imports failed: {result.stdout.strip()}"
+    assert (
+        result.stdout.strip() == "{}"
+    ), f"Core imports failed: {result.stdout.strip()}"
 
 
 def test_cli_help_starts_successfully():

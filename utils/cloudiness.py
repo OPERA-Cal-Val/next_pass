@@ -1,20 +1,20 @@
+import json
 import logging
 import os
 import random
 import tempfile
-import time
-import json
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Union
 
 import numpy as np
 import rasterio
 import requests
-from requests.adapters import HTTPAdapter
 from dateutil.parser import parse as parse_datetime
+from requests.adapters import HTTPAdapter
 from shapely.geometry import Point, Polygon, mapping, shape
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ SESSION.mount("https://", adapter)
 
 def chunks(seq, size):
     for i in range(0, len(seq), size):
-        yield seq[i:i + size]
+        yield seq[i : i + size]
 
 
 def as_utc_datetime(dt_like: Union[str, datetime]) -> datetime:
@@ -73,8 +73,7 @@ def get_cloudiness(url):
             response = requests.get(url, stream=True)
             if response.status_code != 200:
                 LOGGER.warning(
-                    "Failed to download %s (status %s)",
-                    url, response.status_code
+                    "Failed to download %s (status %s)", url, response.status_code
                 )
                 return None
 
@@ -107,8 +106,7 @@ def get_cloudiness(url):
         return None
 
 
-def generate_random_sample_points(polygon: Polygon,
-                                  n: int = 10) -> List[Point]:
+def generate_random_sample_points(polygon: Polygon, n: int = 10) -> List[Point]:
     """Generate random sample points within a polygon."""
     minx, miny, maxx, maxy = polygon.bounds
     points: List[Point] = []
@@ -126,8 +124,7 @@ def generate_random_sample_points(polygon: Polygon,
     return points
 
 
-def generate_grid_sample_points(polygon: Polygon,
-                                num_points: int = 10) -> List[Point]:
+def generate_grid_sample_points(polygon: Polygon, num_points: int = 10) -> List[Point]:
     """
     Generate approximately `num_points' evenly spaced points within a polygon
     """
@@ -180,11 +177,11 @@ def get_cloudiness_at_point(
     url = "https://api.open-meteo.com/v1/forecast"
 
     params = {
-            "latitude": lat,
-            "longitude": lon,
-            "hourly": "cloudcover",
-            "timezone": "UTC",
-        }
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": "cloudcover",
+        "timezone": "UTC",
+    }
     try:
         response = session.get(url, params=params, timeout=10)
         response.raise_for_status()
@@ -204,8 +201,7 @@ def get_cloudiness_at_point(
         if allow_nearest:
             target_dt_obj = parse_datetime(target_iso)
             time_diffs = [
-                abs((parse_datetime(t) - target_dt_obj).total_seconds()
-                    ) for t in times
+                abs((parse_datetime(t) - target_dt_obj).total_seconds()) for t in times
             ]
             min_idx = time_diffs.index(min(time_diffs))
             return clouds[min_idx]
@@ -252,8 +248,7 @@ def get_cloudiness_at_points(
         # to avoid 'list' object has no attribute 'get' error message
         data = response.json()
         if isinstance(data, list):
-            hourlies = [d.get("hourly", {}
-                              ) for d in data if isinstance(d, dict)]
+            hourlies = [d.get("hourly", {}) for d in data if isinstance(d, dict)]
         else:
             # to be safe we consider single point possibilty
             hourlies = [data.get("hourly", {})]
@@ -299,7 +294,9 @@ def get_cloudiness_at_points(
             LOGGER.warning(f"{reason}")
             return [None] * len(points)
         else:
-            LOGGER.error("HTTP error calculating historical cloudiness using %s: %s", url, e)
+            LOGGER.error(
+                "HTTP error calculating historical cloudiness using %s: %s", url, e
+            )
             return [None] * len(points)
 
     except (requests.RequestException, KeyError, ValueError) as e:
@@ -364,8 +361,7 @@ def get_historical_cloudiness_at_point(
         # Find nearest match (optional)
         if allow_nearest:
             time_diffs = [
-                abs((parse_datetime(t) - target_dt).total_seconds()
-                    ) for t in times
+                abs((parse_datetime(t) - target_dt).total_seconds()) for t in times
             ]
             min_idx = time_diffs.index(min(time_diffs))
             return clouds[min_idx]
@@ -373,8 +369,7 @@ def get_historical_cloudiness_at_point(
         return None
 
     except (requests.RequestException, KeyError, ValueError) as e:
-        LOGGER.error(
-            "Error calculating historical cloudiness using %s: %s", url, e)
+        LOGGER.error("Error calculating historical cloudiness using %s: %s", url, e)
         return None
 
 
@@ -416,8 +411,7 @@ def get_historical_cloudiness_at_points(
 
         data = response.json()
         if isinstance(data, list):
-            hourlies = [d.get("hourly", {}
-                              ) for d in data if isinstance(d, dict)]
+            hourlies = [d.get("hourly", {}) for d in data if isinstance(d, dict)]
         else:
             hourlies = [data.get("hourly", {})]
 
@@ -438,8 +432,7 @@ def get_historical_cloudiness_at_points(
             # Nearest match
             if allow_nearest:
                 time_diffs = [
-                    abs((parse_datetime(t) - target_dt).total_seconds())
-                    for t in times
+                    abs((parse_datetime(t) - target_dt).total_seconds()) for t in times
                 ]
                 min_idx = time_diffs.index(min(time_diffs))
                 results.append(clouds[min_idx])
@@ -454,11 +447,12 @@ def get_historical_cloudiness_at_points(
             hit_api_limit = True
             remaining = e.response.headers.get("X-RateLimit-Remaining")
             reset = e.response.headers.get("X-RateLimit-Reset")
-            LOGGER.warning("API limit hit: remaining=%s reset=%s", 
-                         remaining, reset)
+            LOGGER.warning("API limit hit: remaining=%s reset=%s", remaining, reset)
             return [None] * len(points)
         else:
-            LOGGER.error("HTTP error calculating historical cloudiness using %s: %s", url, e)
+            LOGGER.error(
+                "HTTP error calculating historical cloudiness using %s: %s", url, e
+            )
             return [None] * len(points)
 
     except (requests.RequestException, KeyError, ValueError) as e:
@@ -511,7 +505,7 @@ def get_overpass_cloudiness(
         if not points:
             return None
 
-        global hit_api_limit 
+        global hit_api_limit
         cloudiness_values: List[float] = []
 
         is_future = target_dt_utc > datetime.now(timezone.utc)
@@ -526,8 +520,7 @@ def get_overpass_cloudiness(
         rate_limiter = RateLimiter(rate_per_sec=3)  # max 3 requests/sec
 
         if hit_api_limit:
-            LOGGER.warning(
-                "Weather API limit already reached. Skipping requests !")
+            LOGGER.warning("Weather API limit already reached. Skipping requests !")
             return None
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -548,7 +541,8 @@ def get_overpass_cloudiness(
                 except requests.exceptions.HTTPError as e:
                     if e.response.status_code == 429:
                         LOGGER.warning(
-                            "Weather API limit reached. Stopping further requests.")
+                            "Weather API limit reached. Stopping further requests."
+                        )
                         hit_api_limit = True
                         break
                     else:
@@ -583,8 +577,7 @@ def make_get_cloudiness_for_row(aoi_polygon: Polygon):
     def get_cloudiness_for_row(row):
         # Check if we have a list of timestamps
         timestamps = (
-            row.begin_date if isinstance(
-                row.begin_date, list) else [row.begin_date]
+            row.begin_date if isinstance(row.begin_date, list) else [row.begin_date]
         )
         cloudiness_vals: List[Optional[float]] = []
 

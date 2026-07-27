@@ -1,6 +1,6 @@
 # NEXT PASS
 
-Predict the **next satellite overpass** for a point, bounding box, or KML AOI — supporting **Sentinel‑1**, **Sentinel‑2**, **Landsat‑8**, **Landsat‑9**, and **NISAR**.  
+Predict the **next satellite overpass** for a point, bounding box, or KML AOI — supporting **Sentinel‑1**, **Sentinel‑2**, **Landsat‑8**, **Landsat‑9**, and **NISAR**.
 Optionally filter by **OPERA product families**, **estimate cloudiness** for the upcoming pass, and **email** results.
 
 ---
@@ -131,12 +131,12 @@ next-pass -b AOI_from_url.geojson
   ```
 
 - **Generate old OPERA products** for a previous event date (YYYY-MM-DD):
-  
+
   ```bash
   next-pass -b 17.32 18.80 -78.61 -75.58 -f opera_search -d 2025-10-01
   ```
 
-- **Generate OPERA Products DRCS map** using a UTC event date in format YYYY-MM-DDTHH:MM 
+- **Generate OPERA Products DRCS map** using a UTC event date in format YYYY-MM-DDTHH:MM
   (Please consider replacing the date in the example with a recent event date):
 
   ```bash
@@ -162,6 +162,8 @@ jupyter lab examples/Run_next_pass.ipynb
 ## Contributing
 
 Issues and pull requests are welcome! If adding a new satellite, product family, or IO backend, please include a small example and a test (if applicable).
+
+For development setup and code quality standards, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

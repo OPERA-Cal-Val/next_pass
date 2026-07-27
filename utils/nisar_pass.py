@@ -12,18 +12,14 @@ from bs4 import BeautifulSoup
 from shapely.geometry import Polygon
 from tabulate import tabulate
 
+from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
 from utils.utils import (
-    find_intersecting_collects,
-    filter_dates_beyond_window,
+    HOURS_PER_LONGITUDE_DEGREE,
     NISAR_ASCENDING_CROSSING_HOUR,
     NISAR_DESCENDING_CROSSING_HOUR,
-    HOURS_PER_LONGITUDE_DEGREE,
     TIDE_PREDICTION_WINDOW_DAYS,
-)
-from utils.tide_prediction import (
-    get_stations_in_aoi,
-    get_tide_info_batch,
-    make_get_tide_for_row,
+    filter_dates_beyond_window,
+    find_intersecting_collects,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -40,7 +36,9 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TRACK_FRAME_RE = re.compile(r"^T(?P<track>\d+)_F(?P<frame>\d+)$", re.IGNORECASE)
 
 
-def estimate_nisar_overpass_time(date_str: str, lat: float, lon: float, pass_direction: str) -> datetime:
+def estimate_nisar_overpass_time(
+    date_str: str, lat: float, lon: float, pass_direction: str
+) -> datetime:
     """
     Estimate NISAR overpass time based on orbital specifications.
 
@@ -81,7 +79,9 @@ def estimate_nisar_overpass_time(date_str: str, lat: float, lon: float, pass_dir
         local_solar_hour = NISAR_DESCENDING_CROSSING_HOUR
     else:
         # Unknown direction - default to descending (most common for SAR)
-        LOGGER.warning(f"Unknown pass direction '{pass_direction}', assuming Descending")
+        LOGGER.warning(
+            f"Unknown pass direction '{pass_direction}', assuming Descending"
+        )
         local_solar_hour = NISAR_DESCENDING_CROSSING_HOUR
 
     # Local Solar Time (LST) approximation:
@@ -234,7 +234,9 @@ def create_nisar_collection_plan() -> Path:
 
 def format_collects(gdf: gpd.GeoDataFrame) -> str:
     """Format NISAR collects for CLI output."""
-    gdf_sorted = gdf.sort_values("intersection_pct", ascending=False).reset_index(drop=True)
+    gdf_sorted = gdf.sort_values("intersection_pct", ascending=False).reset_index(
+        drop=True
+    )
     has_tide = "tide" in gdf_sorted.columns
     table = []
 
@@ -252,7 +254,7 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
                 for stamp in dates
             ]
             date_lines = [
-                ", ".join(formatted_dates[i:i + 5])
+                ", ".join(formatted_dates[i : i + 5])
                 for i in range(0, len(formatted_dates), 5)
             ]
             dates_str = "\n".join(date_lines)
@@ -277,7 +279,11 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
                     for v in row.tide
                 )
             else:
-                tide_str = row.tide["nearest"] if (isinstance(row.tide, dict) and "nearest" in row.tide) else "N/A"
+                tide_str = (
+                    row.tide["nearest"]
+                    if (isinstance(row.tide, dict) and "nearest" in row.tide)
+                    else "N/A"
+                )
             base_row.append(tide_str)
 
         table.append(base_row)
@@ -322,7 +328,7 @@ def build_collect_summaries(gdf: gpd.GeoDataFrame) -> list[str]:
             f"Direction: {row.pass_direction} (~{first_time} UTC)",
             f"Track: {row.track}",
             f"Frame: {row.frame}",
-            f"Acquisition Dates (P = past):",
+            "Acquisition Dates (P = past):",
             date_display,
             f"AOI % Overlap: {row.intersection_pct:.2f}",
         ]
@@ -334,6 +340,7 @@ def build_collect_summaries(gdf: gpd.GeoDataFrame) -> list[str]:
                 if tide_entries and any(t is not None for t in tide_entries):
                     # Aggregate by station like Sentinel
                     from collections import defaultdict
+
                     by_station = defaultdict(list)
                     for entry in tide_entries:
                         if entry and isinstance(entry, dict) and "per_station" in entry:
@@ -397,7 +404,9 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
     collects = find_intersecting_collects(gdf, geometry)
     if collects.empty:
         last_date = gdf["end_date"].max()
-        last_text = last_date.date().isoformat() if pd.notna(last_date) else "available plan"
+        last_text = (
+            last_date.date().isoformat() if pd.notna(last_date) else "available plan"
+        )
         return {
             "next_collect_info": f"No scheduled collects before {last_text}.",
             "next_collect_geometry": None,
@@ -425,9 +434,9 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
 
     # NISAR neighboring frames can overlap slightly. For a given track and
     # pass direction, keep only the frame(s) with the strongest AOI overlap.
-    best_overlap = grouped.groupby(
-        ["pass_direction", "track"], dropna=False
-    )["intersection_pct"].transform("max")
+    best_overlap = grouped.groupby(["pass_direction", "track"], dropna=False)[
+        "intersection_pct"
+    ].transform("max")
     grouped = grouped[grouped["intersection_pct"] == best_overlap].reset_index(
         drop=True
     )
@@ -439,14 +448,20 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
 
     def estimate_times_for_dates(row):
         """Apply time estimation to each date in the row's begin_date list."""
-        dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
+        dates = (
+            row["begin_date"]
+            if isinstance(row["begin_date"], list)
+            else [row["begin_date"]]
+        )
         pass_direction = row["pass_direction"]
 
         estimated_times = []
         for dt in dates:
             # Convert datetime to date string for estimation
             date_str = dt.strftime("%Y-%m-%d")
-            estimated_dt = estimate_nisar_overpass_time(date_str, lat, lon, pass_direction)
+            estimated_dt = estimate_nisar_overpass_time(
+                date_str, lat, lon, pass_direction
+            )
             estimated_times.append(estimated_dt)
 
         return estimated_times
@@ -462,7 +477,9 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
         try:
             noaa_stations = get_stations_in_aoi(geometry)
             if not noaa_stations:
-                LOGGER.warning("No NOAA stations found in AOI - tide predictions will be empty")
+                LOGGER.warning(
+                    "No NOAA stations found in AOI - tide predictions will be empty"
+                )
         except Exception as e:
             LOGGER.warning("Could not retrieve NOAA stations for AOI: %s", e)
             noaa_stations = None
@@ -484,7 +501,11 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
             row_ranges = []  # list of (start, end) tuples in row order
 
             for _, row in grouped.iterrows():
-                dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
+                dates = (
+                    row["begin_date"]
+                    if isinstance(row["begin_date"], list)
+                    else [row["begin_date"]]
+                )
                 row_isos = []
                 for t in dates:
                     if isinstance(t, datetime):
@@ -511,9 +532,7 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
                 all_tide_results = []
 
             # Distribute results back to each row in order
-            tide_per_row = [
-                all_tide_results[start:end] for start, end in row_ranges
-            ]
+            tide_per_row = [all_tide_results[start:end] for start, end in row_ranges]
             grouped["tide"] = tide_per_row
 
             # Filter dates within each row to only those within 2 months from now
@@ -521,7 +540,11 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
                 """Keep only dates and corresponding tides within 2 months."""
                 nonlocal future_passes_count, future_passes_min_date, future_passes_max_date
 
-                dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
+                dates = (
+                    row["begin_date"]
+                    if isinstance(row["begin_date"], list)
+                    else [row["begin_date"]]
+                )
                 tides = row["tide"] if isinstance(row["tide"], list) else [row["tide"]]
 
                 # Use shared filtering function
@@ -540,10 +563,16 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
                 # Update tracking variables
                 future_passes_count += count
                 if min_date is not None:
-                    if future_passes_min_date is None or min_date < future_passes_min_date:
+                    if (
+                        future_passes_min_date is None
+                        or min_date < future_passes_min_date
+                    ):
                         future_passes_min_date = min_date
                 if max_date is not None:
-                    if future_passes_max_date is None or max_date > future_passes_max_date:
+                    if (
+                        future_passes_max_date is None
+                        or max_date > future_passes_max_date
+                    ):
                         future_passes_max_date = max_date
 
                 if filtered_dates:

@@ -4,7 +4,6 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 
 import utils.nisar_pass as nisar_pass
-
 from tests.helpers import FakeFrame, FakePolygon
 
 
@@ -59,9 +58,15 @@ def test_iter_nisar_placemarks_reads_track_and_frame_from_name(tmp_path):
     assert records[0]["pass_direction"] == "Descending"
 
 
-def test_create_nisar_collection_plan_returns_empty_path_when_no_rows(monkeypatch, tmp_path):
+def test_create_nisar_collection_plan_returns_empty_path_when_no_rows(
+    monkeypatch, tmp_path
+):
     monkeypatch.setattr(nisar_pass, "SCRATCH_DIR", tmp_path)
-    monkeypatch.setattr(nisar_pass, "download_nisar_plan", lambda url, output_path: tmp_path / "plan.kmz")
+    monkeypatch.setattr(
+        nisar_pass,
+        "download_nisar_plan",
+        lambda url, output_path: tmp_path / "plan.kmz",
+    )
     monkeypatch.setattr(nisar_pass, "iter_nisar_placemarks", lambda kmz_path: iter(()))
 
     result = nisar_pass.create_nisar_collection_plan()
@@ -70,7 +75,11 @@ def test_create_nisar_collection_plan_returns_empty_path_when_no_rows(monkeypatc
 
 
 def test_next_nisar_pass_handles_read_failures(monkeypatch):
-    monkeypatch.setattr(nisar_pass, "create_nisar_collection_plan", lambda: (_ for _ in ()).throw(OSError("bad file")))
+    monkeypatch.setattr(
+        nisar_pass,
+        "create_nisar_collection_plan",
+        lambda: (_ for _ in ()).throw(OSError("bad file")),
+    )
 
     result = nisar_pass.next_nisar_pass(FakePolygon("aoi"), 13)
 
@@ -79,16 +88,28 @@ def test_next_nisar_pass_handles_read_failures(monkeypatch):
 
 def test_next_nisar_pass_returns_no_collect_message(monkeypatch):
     end_date = datetime.now(timezone.utc) + timedelta(days=4)
-    monkeypatch.setattr(nisar_pass, "create_nisar_collection_plan", lambda: "nisar.geojson")
+    monkeypatch.setattr(
+        nisar_pass, "create_nisar_collection_plan", lambda: "nisar.geojson"
+    )
     monkeypatch.setattr(
         nisar_pass.gpd,
         "read_file",
         lambda path: FakeFrame(
-            [{"begin_date": end_date, "end_date": end_date, "geometry": FakePolygon("geom")}]
+            [
+                {
+                    "begin_date": end_date,
+                    "end_date": end_date,
+                    "geometry": FakePolygon("geom"),
+                }
+            ]
         ),
     )
-    monkeypatch.setattr(nisar_pass.pd, "to_datetime", lambda value, utc=True, errors=None: value)
-    monkeypatch.setattr(nisar_pass, "find_intersecting_collects", lambda gdf, geometry: FakeFrame([]))
+    monkeypatch.setattr(
+        nisar_pass.pd, "to_datetime", lambda value, utc=True, errors=None: value
+    )
+    monkeypatch.setattr(
+        nisar_pass, "find_intersecting_collects", lambda gdf, geometry: FakeFrame([])
+    )
 
     result = nisar_pass.next_nisar_pass(FakePolygon("aoi"), 13)
 
@@ -122,12 +143,22 @@ def test_next_nisar_pass_groups_by_best_overlap(monkeypatch):
         ]
     )
 
-    monkeypatch.setattr(nisar_pass, "create_nisar_collection_plan", lambda: "nisar.geojson")
+    monkeypatch.setattr(
+        nisar_pass, "create_nisar_collection_plan", lambda: "nisar.geojson"
+    )
     monkeypatch.setattr(nisar_pass.gpd, "read_file", lambda path: rows.copy())
-    monkeypatch.setattr(nisar_pass.pd, "to_datetime", lambda value, utc=True, errors=None: value)
-    monkeypatch.setattr(nisar_pass, "find_intersecting_collects", lambda gdf, geometry: gdf)
+    monkeypatch.setattr(
+        nisar_pass.pd, "to_datetime", lambda value, utc=True, errors=None: value
+    )
+    monkeypatch.setattr(
+        nisar_pass, "find_intersecting_collects", lambda gdf, geometry: gdf
+    )
     monkeypatch.setattr(nisar_pass, "format_collects", lambda grouped: "table")
-    monkeypatch.setattr(nisar_pass, "build_collect_summaries", lambda grouped: ["summary"] * len(grouped.rows))
+    monkeypatch.setattr(
+        nisar_pass,
+        "build_collect_summaries",
+        lambda grouped: ["summary"] * len(grouped.rows),
+    )
 
     result = nisar_pass.next_nisar_pass(FakePolygon("aoi"), 13)
 
@@ -194,4 +225,3 @@ def test_estimate_nisar_overpass_time_dateline_descending_double_rollover():
     assert result.date().isoformat() == "2026-06-29"
     assert result.hour == 5
     assert result.minute == 40
-

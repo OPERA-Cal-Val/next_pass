@@ -1,7 +1,7 @@
-import unittest
-from datetime import date
 import sys
 import types
+import unittest
+from datetime import date
 
 
 def _install_test_stubs() -> None:
@@ -34,7 +34,10 @@ def _install_test_stubs() -> None:
 
 _install_test_stubs()
 
-from utils.landsat_pass import LandsatScheduleSource, find_next_landsat_pass
+from utils.landsat_pass import (  # noqa: E402
+    LandsatScheduleSource,
+    find_next_landsat_pass,
+)
 
 
 class FindNextLandsatPassTests(unittest.TestCase):

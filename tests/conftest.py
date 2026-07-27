@@ -4,7 +4,6 @@ import sys
 import types
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -175,7 +174,7 @@ def _install_shapely_stub() -> None:
     def loads(wkt_text):
         wkt_text = wkt_text.strip()
         if wkt_text.upper().startswith("POINT"):
-            inner = wkt_text[wkt_text.index("(") + 1:wkt_text.index(")")].strip()
+            inner = wkt_text[wkt_text.index("(") + 1 : wkt_text.index(")")].strip()
             x_str, y_str = inner.split()
             return Point(float(x_str), float(y_str))
         if wkt_text.upper().startswith("POLYGON"):
@@ -197,7 +196,9 @@ def _install_shapely_stub() -> None:
     shapely_geometry_module.mapping = mapping
     shapely_geometry_module.box = box
     shapely_geometry_base_module.BaseGeometry = BaseGeometry
-    shapely_ops_module.unary_union = lambda geometries: geometries[0] if geometries else None
+    shapely_ops_module.unary_union = lambda geometries: (
+        geometries[0] if geometries else None
+    )
 
     sys.modules["shapely"] = shapely_module
     sys.modules["shapely.geometry"] = shapely_geometry_module
@@ -259,7 +260,12 @@ def _install_geopandas_stub() -> None:
             Path(path).write_text("{}", encoding="utf-8")
 
         def copy(self):
-            return GeoDataFrame(list(self), columns=list(self.columns), geometry=self.geometry, crs=self.crs)
+            return GeoDataFrame(
+                list(self),
+                columns=list(self.columns),
+                geometry=self.geometry,
+                crs=self.crs,
+            )
 
     geopandas_module.GeoSeries = GeoSeries
     geopandas_module.GeoDataFrame = GeoDataFrame
@@ -369,7 +375,10 @@ def _install_openpyxl_stub() -> None:
             if key != 1:
                 raise KeyError(key)
             row = self.rows[0] if self.rows else []
-            return [_Cell(value=value, column_letter=chr(65 + index)) for index, value in enumerate(row)]
+            return [
+                _Cell(value=value, column_letter=chr(65 + index))
+                for index, value in enumerate(row)
+            ]
 
         @property
         def columns(self):
@@ -411,7 +420,9 @@ def _install_matplotlib_stub() -> None:
         return lambda index: f"#{index:06x}"[-7:]
 
     matplotlib_pyplot_module.get_cmap = get_cmap
-    matplotlib_colors_module.to_hex = lambda value: value if isinstance(value, str) else "#000000"
+    matplotlib_colors_module.to_hex = lambda value: (
+        value if isinstance(value, str) else "#000000"
+    )
 
     sys.modules["matplotlib"] = matplotlib_module
     sys.modules["matplotlib.pyplot"] = matplotlib_pyplot_module

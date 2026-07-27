@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import utils.cloudiness as cloudiness
-
 from tests.helpers import FakePolygon
 
 
@@ -26,7 +25,9 @@ class FakeResponse:
 
 def test_as_utc_datetime_normalizes_naive_and_aware_values():
     naive = cloudiness.as_utc_datetime("2026-03-23T10:00:00")
-    aware = cloudiness.as_utc_datetime(datetime(2026, 3, 23, 10, 0, tzinfo=timezone.utc))
+    aware = cloudiness.as_utc_datetime(
+        datetime(2026, 3, 23, 10, 0, tzinfo=timezone.utc)
+    )
 
     assert naive.tzinfo == timezone.utc
     assert aware.tzinfo == timezone.utc
@@ -38,12 +39,20 @@ def test_get_cloudiness_at_point_exact_and_nearest():
         (),
         {
             "get": lambda self, url, params=None, timeout=None: FakeResponse(
-                {"hourly": {"time": ["2026-03-23T10:00", "2026-03-23T11:00"], "cloudcover": [10, 70]}}
+                {
+                    "hourly": {
+                        "time": ["2026-03-23T10:00", "2026-03-23T11:00"],
+                        "cloudcover": [10, 70],
+                    }
+                }
             )
         },
     )()
 
-    assert cloudiness.get_cloudiness_at_point(1, 2, "2026-03-23T10:00", session=session) == 10
+    assert (
+        cloudiness.get_cloudiness_at_point(1, 2, "2026-03-23T10:00", session=session)
+        == 10
+    )
     assert cloudiness.get_cloudiness_at_point(
         1,
         2,
@@ -60,11 +69,15 @@ def test_get_cloudiness_at_points_sets_api_limit_on_429():
         "Session",
         (),
         {
-            "get": lambda self, url, params=None, timeout=None: FakeResponse({}, status_code=429, text='{"reason": "too many requests"}')
+            "get": lambda self, url, params=None, timeout=None: FakeResponse(
+                {}, status_code=429, text='{"reason": "too many requests"}'
+            )
         },
     )()
 
-    result = cloudiness.get_cloudiness_at_points([(1, 2), (3, 4)], "2026-03-23T10:00", session=session)
+    result = cloudiness.get_cloudiness_at_points(
+        [(1, 2), (3, 4)], "2026-03-23T10:00", session=session
+    )
 
     assert result == [None, None]
     assert cloudiness.hit_api_limit is True
@@ -109,9 +122,19 @@ def test_get_overpass_cloudiness_chooses_future_and_historical_backends(monkeypa
         "generate_grid_sample_points",
         lambda polygon, num_points=10: [type("P", (), {"x": 1, "y": 2})()],
     )
-    monkeypatch.setattr(cloudiness, "generate_random_sample_points", lambda polygon, n=10: [])
-    monkeypatch.setattr(cloudiness, "get_cloudiness_at_points", lambda points, target_iso, allow_nearest=False: [10])
-    monkeypatch.setattr(cloudiness, "get_historical_cloudiness_at_points", lambda points, target_iso, allow_nearest=False: [20])
+    monkeypatch.setattr(
+        cloudiness, "generate_random_sample_points", lambda polygon, n=10: []
+    )
+    monkeypatch.setattr(
+        cloudiness,
+        "get_cloudiness_at_points",
+        lambda points, target_iso, allow_nearest=False: [10],
+    )
+    monkeypatch.setattr(
+        cloudiness,
+        "get_historical_cloudiness_at_points",
+        lambda points, target_iso, allow_nearest=False: [20],
+    )
 
     future = cloudiness.get_overpass_cloudiness(
         {"type": "Polygon", "coordinates": []},
@@ -133,7 +156,10 @@ def test_make_get_cloudiness_for_row_respects_14_day_limit(monkeypatch):
     monkeypatch.setattr(
         cloudiness,
         "get_overpass_cloudiness",
-        lambda polygon_geojson, target_datetime, num_samples, allow_nearest, sampling_method: captured.append(num_samples) or 33.0,
+        lambda polygon_geojson, target_datetime, num_samples, allow_nearest, sampling_method: captured.append(
+            num_samples
+        )
+        or 33.0,
     )
 
     get_for_row = cloudiness.make_get_cloudiness_for_row(FakePolygon("aoi"))

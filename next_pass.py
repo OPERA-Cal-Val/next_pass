@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, List
+
 from utils.utils import format_satellite_arg
 
 LOGGER = logging.getLogger("next_pass")
@@ -139,11 +140,11 @@ def create_parser() -> argparse.ArgumentParser:
 def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     """Main logic for finding the next satellite overpasses."""
 
+    from utils.cloudiness import api_limit_reached
     from utils.landsat_pass import next_landsat_pass
     from utils.nisar_pass import next_nisar_pass
     from utils.sentinel_pass import next_sentinel_pass
-    from utils.utils import bbox_type, bbox_to_geometry
-    from utils.cloudiness import api_limit_reached
+    from utils.utils import bbox_to_geometry, bbox_type
 
     bbox = bbox_type(args.bbox)
     n_day_past = args.look_back
@@ -168,10 +169,8 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
 
     # for cloudiness waiting time
     needs_weather_backoff = (
-            pred_cloudiness
-            and "sentinel-1" in selected
-            and "sentinel-2" in selected
-        )
+        pred_cloudiness and "sentinel-1" in selected and "sentinel-2" in selected
+    )
 
     # Fetch conditionally
     if "sentinel-1" in selected:
@@ -184,9 +183,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
         LOGGER.info("Fetching Sentinel-2 data...")
 
         if needs_weather_backoff and not api_limit_reached():
-            LOGGER.info(
-                "Waiting 1 min to avoid hitting cumulative weather API quota."
-            )
+            LOGGER.info("Waiting 1 min to avoid hitting cumulative weather API quota.")
             time.sleep(60)
 
         sentinel2 = next_sentinel_pass(
@@ -258,7 +255,7 @@ def run_next_pass(
     compute_cloudiness: bool = False,
     compute_tide: bool = False,
     products: List[str] | str | None = None,
-    satellites: List[str] | str | None = None
+    satellites: List[str] | str | None = None,
 ):
     """
     Programmatic entry point for next_pass.
@@ -292,7 +289,7 @@ def run_next_pass(
 
     if date:
         cli_args += ["-d", date]
-    
+
     if products:
         cli_args.append("-p")
         if isinstance(products, str):
@@ -389,12 +386,10 @@ def main(cli_args: Any = None):
             args.number_of_dates,
             args.event_date,
             args.products,
-            timestamp_dir
+            timestamp_dir,
         )
         export_opera_products(
-            results_opera,
-            timestamp_dir,
-            compute_cloudiness=args.cloudiness
+            results_opera, timestamp_dir, compute_cloudiness=args.cloudiness
         )
         make_opera_granule_map(results_opera, args.bbox, timestamp_dir)
 

@@ -7,12 +7,8 @@ import pandas as pd
 from tabulate import tabulate
 
 from utils.cloudiness import make_get_cloudiness_for_row
-from utils.tide_prediction import (
-    make_get_tide_for_row,
-    get_stations_in_aoi,
-    get_tide_info_batch,
-)
 from utils.collection_builder import build_sentinel_collection
+from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
 from utils.utils import find_intersecting_collects, scrape_esa_download_urls
 
 LOGGER = logging.getLogger("sentinel_pass")
@@ -29,7 +25,7 @@ def format_date_lines(dates: list[datetime], per_line: int = 5) -> str:
         for d in dates
     ]
     return "\n".join(
-        ", ".join(formatted_dates[i:i + per_line])
+        ", ".join(formatted_dates[i : i + per_line])
         for i in range(0, len(formatted_dates), per_line)
     )
 
@@ -50,7 +46,9 @@ def build_collect_summaries(gdf: gpd.GeoDataFrame) -> list[str]:
         if has_platform:
             parts.append(f"Platform: {row.platform}")
         parts.append(f"Relative Orbit: {row.orbit_relative}")
-        parts.append(f"Collection Date & UTC Time (P = past):\n{format_date_lines(row.begin_date)}")
+        parts.append(
+            f"Collection Date & UTC Time (P = past):\n{format_date_lines(row.begin_date)}"
+        )
         parts.append(f"AOI % Overlap: {row.intersection_pct:.2f}")
 
         if has_cloudiness:
@@ -117,9 +115,7 @@ def create_s2_collection_plan(n_day_past: float) -> Path:
     urls_c = scrape_esa_download_urls(SENT2_URL, "sentinel-2c")
     urls = urls_a + urls_b + urls_c
 
-    platforms = (
-        ["S2A"] * len(urls_a) + ["S2B"] * len(urls_b) + ["S2C"] * len(urls_c)
-    )
+    platforms = ["S2A"] * len(urls_a) + ["S2B"] * len(urls_b) + ["S2C"] * len(urls_c)
 
     return build_sentinel_collection(
         urls,
@@ -179,7 +175,11 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
                     for v in row.tide
                 )
             else:
-                tide_str = row.tide["nearest"] if (isinstance(row.tide, dict) and "nearest" in row.tide) else "N/A"
+                tide_str = (
+                    row.tide["nearest"]
+                    if (isinstance(row.tide, dict) and "nearest" in row.tide)
+                    else "N/A"
+                )
             base_row.append(tide_str)
 
         table.append(base_row)
@@ -246,8 +246,7 @@ def unique_geometry_per_orbit(collects: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     )
 
     # Sort by intersection percentage
-    grouped = grouped.sort_values("intersection_pct", ascending=False
-                                  ).reset_index(
+    grouped = grouped.sort_values("intersection_pct", ascending=False).reset_index(
         drop=True
     )
 
@@ -296,8 +295,7 @@ def next_sentinel_pass(
         }
 
     if "platform" not in gdf.columns:
-        LOGGER.warning(
-            "The collection plan does not contain a 'platform' column.")
+        LOGGER.warning("The collection plan does not contain a 'platform' column.")
 
     collects = find_intersecting_collects(gdf, geometry)
     dedupe_cols = ["begin_date", "orbit_relative"]
@@ -306,13 +304,11 @@ def next_sentinel_pass(
     collects = collects.drop_duplicates(subset=dedupe_cols)
 
     if "platform" not in gdf.columns:
-        LOGGER.warning(
-            "The collection plan does not contain a 'platform' column.")
+        LOGGER.warning("The collection plan does not contain a 'platform' column.")
 
     if not collects.empty:
         groupby_cols = ["orbit_relative"]
-        if "platform" in collects.columns and collects["platform"
-                                                       ].notna().any():
+        if "platform" in collects.columns and collects["platform"].notna().any():
             groupby_cols.append("platform")
 
         # Group collects by orbit, aggregate timestamps as list
@@ -348,7 +344,9 @@ def next_sentinel_pass(
             try:
                 noaa_stations = get_stations_in_aoi(geometry)
                 if not noaa_stations:
-                    LOGGER.warning("No NOAA stations found in AOI - tide predictions will be empty")
+                    LOGGER.warning(
+                        "No NOAA stations found in AOI - tide predictions will be empty"
+                    )
             except Exception as e:
                 LOGGER.warning("Could not retrieve NOAA stations for AOI: %s", e)
                 noaa_stations = None
@@ -365,7 +363,11 @@ def next_sentinel_pass(
                 row_ranges = []  # list of (start_idx, end_idx) tuples in row order
 
                 for _, row in collects_grouped.iterrows():
-                    dates = row["begin_date"] if isinstance(row["begin_date"], list) else [row["begin_date"]]
+                    dates = (
+                        row["begin_date"]
+                        if isinstance(row["begin_date"], list)
+                        else [row["begin_date"]]
+                    )
                     row_isos = []
                     for t in dates:
                         if isinstance(t, datetime):
@@ -401,8 +403,9 @@ def next_sentinel_pass(
             "next_collect_geometry": collects_grouped["geometry"].tolist(),
             "next_collect_summary": build_collect_summaries(collects_grouped),
             "intersection_pct": collects_grouped["intersection_pct"].tolist(),
-            "cloudiness": collects_grouped["cloudiness"].tolist(
-            ) if arg_cloudiness else None,
+            "cloudiness": (
+                collects_grouped["cloudiness"].tolist() if arg_cloudiness else None
+            ),
             "tide": collects_grouped["tide"].tolist() if arg_tide else None,
             "noaa_stations": noaa_stations,
         }

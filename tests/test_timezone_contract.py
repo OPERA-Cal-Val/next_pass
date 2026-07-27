@@ -5,18 +5,19 @@ These tests verify that the validation checks properly reject timezone-aware
 datetimes and accept naive datetimes representing UTC.
 """
 
-import pytest
-from datetime import datetime, timezone
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+
+import pytest
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.tide_prediction import (
-    interpolate_tide,
-    _find_tide_direction,
+from utils.tide_prediction import (  # noqa: E402
     _find_nearest_hilo_label,
+    _find_tide_direction,
+    interpolate_tide,
 )
 
 

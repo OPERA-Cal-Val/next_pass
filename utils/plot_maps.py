@@ -15,10 +15,9 @@ from jinja2 import Template
 from matplotlib.colors import to_hex
 from shapely.geometry import Polygon
 
-
 from utils.utils import (
-    bbox_type,
     bbox_to_geometry,
+    bbox_type,
     check_opera_overpass_intersection,
     style_function_factory,
 )
@@ -365,8 +364,7 @@ def make_opera_granule_drcs_map(
     folium.GeoJson(
         aoi_geojson,
         name="AOI",
-        style_function=lambda x: {"color": "black",
-                                  "weight": 2, "fillOpacity": 0.0},
+        style_function=lambda x: {"color": "black", "weight": 2, "fillOpacity": 0.0},
     ).add_to(map_object)
 
     folium.LayerControl().add_to(map_object)
@@ -494,7 +492,9 @@ def make_overpasses_map(
                     color = "gray"
 
                 geojson_data = gpd.GeoSeries([polygon]).__geo_interface__
-                info_html = info.replace("\n", "<br>") if isinstance(info, str) else str(info)
+                info_html = (
+                    info.replace("\n", "<br>") if isinstance(info, str) else str(info)
+                )
                 folium.GeoJson(
                     geojson_data,
                     name=f"{sat_name} Path/Row",
@@ -503,7 +503,9 @@ def make_overpasses_map(
                         "weight": 2,
                         "fillOpacity": 0.3,
                     },
-                    popup=folium.Popup(f"<b>{sat_name}</b><br>{info_html}", max_width=600),
+                    popup=folium.Popup(
+                        f"<b>{sat_name}</b><br>{info_html}", max_width=600
+                    ),
                 ).add_to(group)
 
             fg_8_asc.add_to(map_object)
@@ -516,7 +518,11 @@ def make_overpasses_map(
                 if isinstance(polygon, Polygon):
                     color = colors[i - 1]
                     geojson_data = gpd.GeoSeries([polygon]).__geo_interface__
-                    info_html = info.replace("\n", "<br>") if isinstance(info, str) else str(info)
+                    info_html = (
+                        info.replace("\n", "<br>")
+                        if isinstance(info, str)
+                        else str(info)
+                    )
                     folium.GeoJson(
                         geojson_data,
                         name=f"{sat_name} Area {i}",
@@ -525,7 +531,9 @@ def make_overpasses_map(
                             "weight": 2,
                             "fillOpacity": 0.3,
                         },
-                        popup=folium.Popup(f"<b>{sat_name}</b><br>{info_html}", max_width=600),
+                        popup=folium.Popup(
+                            f"<b>{sat_name}</b><br>{info_html}", max_width=600
+                        ),
                     ).add_to(fg)
             fg.add_to(map_object)
 
@@ -562,9 +570,11 @@ def make_overpasses_map(
 
     class MultiPopup(MacroElement):
         """One popup open per type (overpass / station), independent of each other."""
+
         def __init__(self):
             super().__init__()
-            self._template = Template("""
+            self._template = Template(
+                """
                 {% macro script(this, kwargs) %}
                     L.Popup.prototype.options.autoClose = false;
                     L.Popup.prototype.options.closeOnClick = false;
@@ -588,7 +598,8 @@ def make_overpasses_map(
                         }
                     });
                 {% endmacro %}
-            """)
+            """
+            )
 
     map_object.get_root().add_child(MultiPopup())
 
