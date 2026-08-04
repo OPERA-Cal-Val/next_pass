@@ -11,6 +11,7 @@ tabulate
 yagmail
 openpyxl>=3.1.5
 timezonefinder
+rich
 pre-commit>=4.6.1
 black>=26.5.1
 isort>=8.0.1

@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List
@@ -52,20 +53,40 @@ def sync_scratch_directory(
         except Exception as e:
             logger.error("Failed to delete %s: %s", file_path, e)
 
-    # Download missing files
-    local_kml_paths: List[Path] = []
-    for url in urls:
-        filename = f"{mission_name}_{Path(url).stem}.kml"
-        file_path = scratch_dir / filename
+    # Map each url to its target path, preserving order
+    url_paths = [
+        (url, scratch_dir / f"{mission_name}_{Path(url).stem}.kml") for url in urls
+    ]
 
-        if file_path.name in missing_files or not file_path.exists():
+    # Determine which files are missing and need downloading
+    to_download = [
+        (url, file_path)
+        for url, file_path in url_paths
+        if file_path.name in missing_files or not file_path.exists()
+    ]
+
+    # Download missing files concurrently (network-bound)
+    failed: set = set()
+    if to_download:
+
+        def _download(item):
+            url, file_path = item
             try:
                 download_kml(url, str(file_path))
+                return None
             except Exception as e:
                 logger.error("Failed downloading %s: %s", url, e)
-                continue
+                return file_path
 
-        local_kml_paths.append(file_path)
+        with ThreadPoolExecutor(max_workers=min(len(to_download), 8)) as executor:
+            for result in executor.map(_download, to_download):
+                if result is not None:
+                    failed.add(result)
+
+    # Return local paths in original url order, skipping failed downloads
+    local_kml_paths: List[Path] = [
+        file_path for _, file_path in url_paths if file_path not in failed
+    ]
 
     return local_kml_paths
 
@@ -101,51 +122,63 @@ def build_sentinel_collection(
     if platforms:
         platform_by_name = {Path(u).stem.lower(): p for u, p in zip(urls, platforms)}
 
-    gdfs: list[gpd.GeoDataFrame] = []
+    def _resolve_platform(kml_path: Path) -> str | None:
+        if not platform_by_name:
+            return None
+        stem = kml_path.stem.lower()
+        # first attempt: direct match
+        platform = platform_by_name.get(stem)
+        # second attempt: drop leading token
+        if platform is None and "_" in stem:
+            stem_id = "_".join(stem.split("_")[1:])
+            platform = platform_by_name.get(stem_id)
+        # last resort: partial match
+        if platform is None:
+            for key, value in platform_by_name.items():
+                if key in stem:
+                    platform = value
+                    break
+        return platform
 
-    for kml_path in local_kml_paths:
+    def _load_kml(kml_path: Path) -> gpd.GeoDataFrame | None:
+        """Read cached geojson or parse KML (CPU-bound), tag with platform."""
         collection_path = SCRATCH_DIR / f"{kml_path.stem}.geojson"
-        platform = None
-
-        if platform_by_name:
-            stem = kml_path.stem.lower()
-            # first attempt: direct match
-            platform = platform_by_name.get(stem)
-
-            # second attempt: drop leading token
-            if platform is None and "_" in stem:
-                stem_id = "_".join(stem.split("_")[1:])
-                platform = platform_by_name.get(stem_id)
-
-            # last resort: partial match
-            if platform is None:
-                for key, value in platform_by_name.items():
-                    if key in stem:
-                        platform = value
-                        break
 
         if collection_path.exists():
-            logger.info("Using cached file: %s", collection_path)
+            logger.debug("Using cached file: %s", collection_path)
             try:
                 gdf = gpd.read_file(collection_path)
             except Exception as e:
                 logger.error("Failed reading %s: %s", collection_path, e)
-                continue
+                return None
         else:
-            logger.info("Parsing new file: %s", kml_path)
+            logger.debug("Parsing new file: %s", kml_path)
             try:
                 gdf = parse_kml(kml_path)
                 if not gdf.empty:
                     gdf.to_file(collection_path)
                 else:
                     logger.warning("No valid data in file: %s", kml_path)
-                    continue
+                    return None
             except Exception as e:
                 logger.error("Failed parsing %s: %s", kml_path, e)
-                continue
+                return None
 
-        gdf["platform"] = platform
-        gdfs.append(gdf)
+        gdf["platform"] = _resolve_platform(kml_path)
+        return gdf
+
+    # Parse/read each KML concurrently. Order is irrelevant: the results are
+    # concatenated and re-sorted by begin_date below. Each writes a distinct
+    # geojson path, so there is no write collision.
+    if local_kml_paths:
+        with ThreadPoolExecutor(max_workers=min(len(local_kml_paths), 8)) as executor:
+            gdfs = [
+                gdf
+                for gdf in executor.map(_load_kml, local_kml_paths)
+                if gdf is not None
+            ]
+    else:
+        gdfs = []
 
     if not gdfs:
         logger.error("No valid GeoDataFrames created.")

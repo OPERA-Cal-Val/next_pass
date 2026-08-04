@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -89,13 +90,32 @@ def build_collect_summaries(gdf: gpd.GeoDataFrame) -> list[str]:
     return summaries
 
 
+def _scrape_esa_plans(base_url: str, specs: list[tuple[str, str]]) -> tuple[list, list]:
+    """Scrape ESA plan URLs for each (mission_tag, platform) spec concurrently.
+
+    Preserves spec order in the returned urls/platforms lists so downstream
+    platform mapping stays correct.
+    """
+    with ThreadPoolExecutor(max_workers=len(specs)) as executor:
+        url_lists = list(
+            executor.map(lambda s: scrape_esa_download_urls(base_url, s[0]), specs)
+        )
+
+    urls: list = []
+    platforms: list = []
+    for (_, platform), url_list in zip(specs, url_lists):
+        urls.extend(url_list)
+        platforms.extend([platform] * len(url_list))
+
+    return urls, platforms
+
+
 def create_s1_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-1 acquisition plan collection."""
-    urls_c = scrape_esa_download_urls(SENT1_URL, "sentinel-1c")
-    urls_d = scrape_esa_download_urls(SENT1_URL, "sentinel-1d")
-    urls = urls_c + urls_d
-
-    platforms = ["S1C"] * len(urls_c) + ["S1D"] * len(urls_d)
+    urls, platforms = _scrape_esa_plans(
+        SENT1_URL,
+        [("sentinel-1c", "S1C"), ("sentinel-1d", "S1D")],
+    )
 
     return build_sentinel_collection(
         urls,
@@ -109,12 +129,10 @@ def create_s1_collection_plan(n_day_past: float) -> Path:
 
 def create_s2_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-2 acquisition plan collection."""
-    urls_a = scrape_esa_download_urls(SENT2_URL, "sentinel-2a")
-    urls_b = scrape_esa_download_urls(SENT2_URL, "sentinel-2b")
-    urls_c = scrape_esa_download_urls(SENT2_URL, "sentinel-2c")
-    urls = urls_a + urls_b + urls_c
-
-    platforms = ["S2A"] * len(urls_a) + ["S2B"] * len(urls_b) + ["S2C"] * len(urls_c)
+    urls, platforms = _scrape_esa_plans(
+        SENT2_URL,
+        [("sentinel-2a", "S2A"), ("sentinel-2b", "S2B"), ("sentinel-2c", "S2C")],
+    )
 
     return build_sentinel_collection(
         urls,
@@ -258,6 +276,7 @@ def next_sentinel_pass(
     n_day_past: float,
     arg_cloudiness: bool,
     arg_tide: bool = False,
+    step_cb=None,
 ) -> dict:
     """
     Load Sentinel collection, find intersects, and format results.
@@ -268,12 +287,15 @@ def next_sentinel_pass(
         n_day_past: How many days back to include in collection.
         arg_cloudiness: Whether to compute cloudiness per overpass.
         arg_tide: Whether to compute NOAA tide predictions per overpass.
+        step_cb: Optional callable(label: str) for coarse progress reporting.
 
     Returns:
         dict: Dictionary with formatted collect info, collect geometries,
         and percentage overlap of each collect with the input geometry (AOI).
     """
     try:
+        if step_cb:
+            step_cb("Loading collection")
         if sat == "sentinel1":
             gdf = gpd.read_file(create_s1_collection_plan(n_day_past))
         elif sat == "sentinel2":
@@ -296,6 +318,8 @@ def next_sentinel_pass(
     if "platform" not in gdf.columns:
         LOGGER.warning("The collection plan does not contain a 'platform' column.")
 
+    if step_cb:
+        step_cb("Finding intersects")
     collects = find_intersecting_collects(gdf, geometry)
     dedupe_cols = ["begin_date", "orbit_relative"]
     if "platform" in collects.columns:
@@ -325,6 +349,8 @@ def next_sentinel_pass(
         num_rows = len(collects_grouped)
         # cloudiness
         if arg_cloudiness:
+            if step_cb:
+                step_cb("Cloudiness")
             collects_grouped["cloudiness"] = None
             LOGGER.info(
                 "Calculating cloudiness for %d overpasses ...",
@@ -338,6 +364,8 @@ def next_sentinel_pass(
         # tide prediction
         noaa_stations = None
         if arg_tide:
+            if step_cb:
+                step_cb("Tide")
             collects_grouped["tide"] = None
             # Get stations once for the full AOI (used for all overpasses and map display)
             try:
@@ -397,6 +425,8 @@ def next_sentinel_pass(
                 ]
                 collects_grouped["tide"] = tide_per_row
 
+        if step_cb:
+            step_cb("Formatting")
         return {
             "next_collect_info": format_collects(collects_grouped),
             "next_collect_geometry": collects_grouped["geometry"].tolist(),

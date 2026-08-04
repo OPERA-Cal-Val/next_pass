@@ -371,18 +371,23 @@ def build_collect_summaries(gdf: gpd.GeoDataFrame) -> list[str]:
     return summaries
 
 
-def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict:
+def next_nisar_pass(
+    geometry, n_day_past: float, arg_tide: bool = False, step_cb=None
+) -> dict:
     """Return formatted NISAR overpasses intersecting the AOI.
 
     Args:
         geometry: AOI geometry (Point or Polygon)
         n_day_past: Number of days in the past to include
         arg_tide: Whether to compute NOAA tide predictions per overpass
+        step_cb: Optional callable(label: str) for coarse progress reporting
 
     Returns:
         Dict with overpass information, including tide predictions if requested
     """
     try:
+        if step_cb:
+            step_cb("Downloading collection plan")
         collection_path = create_nisar_collection_plan()
         if not collection_path:
             raise OSError("NISAR collection could not be created.")
@@ -395,12 +400,16 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
             "intersection_pct": None,
         }
 
+    if step_cb:
+        step_cb("Parsing/filtering")
     gdf["begin_date"] = pd.to_datetime(gdf["begin_date"], utc=True, errors="coerce")
     gdf["end_date"] = pd.to_datetime(gdf["end_date"], utc=True, errors="coerce")
     gdf = gdf.dropna(subset=["begin_date", "geometry"]).reset_index(drop=True)
     n_days_earlier = datetime.now(timezone.utc) - timedelta(days=n_day_past)
     gdf = gdf.loc[gdf["begin_date"] >= n_days_earlier].reset_index(drop=True)
 
+    if step_cb:
+        step_cb("Finding intersects")
     collects = find_intersecting_collects(gdf, geometry)
     if collects.empty:
         last_date = gdf["end_date"].max()
@@ -467,11 +476,15 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
         return estimated_times
 
     # Apply time estimation to all rows
+    if step_cb:
+        step_cb("Estimating times")
     grouped["begin_date"] = grouped.apply(estimate_times_for_dates, axis=1)
 
     # Tide prediction (if requested)
     noaa_stations = None
     if arg_tide:
+        if step_cb:
+            step_cb("Predicting tides")
         grouped["tide"] = None
         # Get stations once for the full AOI (used for all overpasses and map display)
         try:
@@ -584,6 +597,8 @@ def next_nisar_pass(geometry, n_day_past: float, arg_tide: bool = False) -> dict
             grouped = grouped.apply(filter_dates_and_tides, axis=1)
             grouped = grouped.dropna().reset_index(drop=True)
 
+    if step_cb:
+        step_cb("Formatting")
     table_output = format_collects(grouped)
 
     # Accuracy disclaimer: NISAR overpass times are estimated (not from acquisition plans)
