@@ -94,7 +94,7 @@ def download_kml(url: str, out_path: str = "collection.kml") -> Path:
     response.raise_for_status()
     path = Path(out_path)
     path.write_bytes(response.content)
-    LOGGER.info(f"File downloaded successfully: {path}")
+    LOGGER.debug(f"File downloaded successfully: {path}")
     return path
 
 

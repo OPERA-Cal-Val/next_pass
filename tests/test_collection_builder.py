@@ -53,6 +53,7 @@ def test_build_sentinel_collection_uses_cached_and_parsed_files(monkeypatch, tmp
         (),
         {
             "info": lambda *args, **kwargs: None,
+            "debug": lambda *args, **kwargs: None,
             "warning": lambda *args, **kwargs: None,
             "error": lambda *args, **kwargs: None,
         },
@@ -112,6 +113,7 @@ def test_build_sentinel_collection_returns_empty_path_when_no_frames(
         (),
         {
             "info": lambda *args, **kwargs: None,
+            "debug": lambda *args, **kwargs: None,
             "warning": lambda *args, **kwargs: None,
             "error": lambda *args, **kwargs: None,
         },

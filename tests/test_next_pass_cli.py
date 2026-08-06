@@ -85,17 +85,17 @@ next_pass.datetime = FakeDateTime
 cloudiness.api_limit_reached = lambda: True
 utils_mod.bbox_type = lambda bbox: bbox
 utils_mod.bbox_to_geometry = fake_bbox_to_geometry
-sentinel_pass.next_sentinel_pass = lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False: {{
+sentinel_pass.next_sentinel_pass = lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False, **kwargs: {{
     "next_collect_info": sat,
     "next_collect_geometry": [geometry],
     "next_collect_summary": [sat],
 }}
-nisar_pass.next_nisar_pass = lambda geometry, n_day_past, arg_tide=False: {{
+nisar_pass.next_nisar_pass = lambda geometry, n_day_past, arg_tide=False, **kwargs: {{
     "next_collect_info": "nisar",
     "next_collect_geometry": [geometry],
     "next_collect_summary": ["nisar"],
 }}
-landsat_pass.next_landsat_pass = lambda lat, lon, geometry, n_day_past, arg_tide=False: {{
+landsat_pass.next_landsat_pass = lambda lat, lon, geometry, n_day_past, arg_tide=False, **kwargs: {{
     "next_collect_info": "landsat",
     "next_collect_geometry": [geometry],
     "next_collect_summary": ["landsat"],
@@ -233,7 +233,7 @@ def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
     monkeypatch.setattr(
         sentinel_pass,
         "next_sentinel_pass",
-        lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False: sentinel_calls.append(
+        lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False, **kwargs: sentinel_calls.append(
             (sat, geometry.name, n_day_past, pred_cloudiness)
         )
         or {"next_collect_info": sat},
@@ -241,14 +241,14 @@ def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
     monkeypatch.setattr(
         nisar_pass,
         "next_nisar_pass",
-        lambda geometry, n_day_past, arg_tide=False: {
+        lambda geometry, n_day_past, arg_tide=False, **kwargs: {
             "next_collect_info": f"nisar-{geometry.name}-{n_day_past}"
         },
     )
     monkeypatch.setattr(
         landsat_pass,
         "next_landsat_pass",
-        lambda lat, lon, geometry, n_day_past, arg_tide=False: {
+        lambda lat, lon, geometry, n_day_past, arg_tide=False, **kwargs: {
             "next_collect_info": f"landsat-{lat}-{lon}-{n_day_past}"
         },
     )
@@ -288,7 +288,7 @@ def test_find_next_overpass_routes_single_satellite(monkeypatch, tmp_path):
     monkeypatch.setattr(
         landsat_pass,
         "next_landsat_pass",
-        lambda lat, lon, geometry, n_day_past, arg_tide=False: {
+        lambda lat, lon, geometry, n_day_past, arg_tide=False, **kwargs: {
             "lat": lat,
             "lon": lon,
             "name": geometry.name,

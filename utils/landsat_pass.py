@@ -451,6 +451,7 @@ def next_landsat_pass(
     geometryAOI,
     n_day_past: float,
     arg_tide: bool = False,
+    step_cb=None,
 ) -> dict | None:
     """
     Retrieve and format the next Landsat passes for a given location.
@@ -462,6 +463,7 @@ def next_landsat_pass(
             intersection percentage.
         n_day_past (float): Number of days in the past to search cycles JSON.
         arg_tide (bool): Whether to compute NOAA tide predictions per overpass.
+        step_cb: Optional callable(label: str) for coarse progress reporting.
 
     Returns:
         dict or None: Dictionary containing next Landsat passes information
@@ -470,7 +472,11 @@ def next_landsat_pass(
     session = requests.Session()
 
     try:
+        if step_cb:
+            step_cb("Resolving path/row")
         results = ll2pr(geometryAOI, session=session)
+        if step_cb:
+            step_cb("Downloading schedule")
         schedule_source = load_landsat_schedule_source(session)
         aggregated_data = defaultdict(
             lambda: {"rows": set(), "overlap_pct": 0.0, "dates": None, "warnings": []}
@@ -478,6 +484,8 @@ def next_landsat_pass(
         geometry_groups = defaultdict(list)
 
         # First pass: collect all features by key
+        if step_cb:
+            step_cb("Finding overpasses")
         features_by_key = defaultdict(list)
         for direction, features in results.items():
             if features:
@@ -506,6 +514,8 @@ def next_landsat_pass(
                         )
 
         # Second pass: aggregate features with proper geometry union
+        if step_cb:
+            step_cb("Computing intersection")
         for key, features in features_by_key.items():
             for feature in features:
                 aggregated_data[key]["rows"].add(feature["row"])
@@ -543,6 +553,8 @@ def next_landsat_pass(
         noaa_stations = None
         tide_data_by_key = {}
         if arg_tide:
+            if step_cb:
+                step_cb("Predicting tides")
             try:
                 noaa_stations = get_stations_in_aoi(geometryAOI)
                 if not noaa_stations:
@@ -652,6 +664,8 @@ def next_landsat_pass(
                     filtered_aggregated_data[key] = data
             aggregated_data = filtered_aggregated_data
 
+        if step_cb:
+            step_cb("Formatting")
         row_data_with_keys = []
         header_time_str = ""
         for key, data in aggregated_data.items():

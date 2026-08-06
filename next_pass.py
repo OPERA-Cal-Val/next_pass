@@ -148,6 +148,7 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     from utils.cloudiness import api_limit_reached
     from utils.landsat_pass import next_landsat_pass
     from utils.nisar_pass import next_nisar_pass
+    from utils.progress import overpass_progress
     from utils.sentinel_pass import next_sentinel_pass
     from utils.utils import bbox_to_geometry, bbox_type
 
@@ -177,31 +178,54 @@ def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
         pred_cloudiness and "sentinel-1" in selected and "sentinel-2" in selected
     )
 
-    # Fetch conditionally
-    if "sentinel-1" in selected:
-        LOGGER.info("Fetching Sentinel-1 data...")
-        sentinel1 = next_sentinel_pass(
-            "sentinel1", geometry, n_day_past, pred_cloudiness, pred_tide
-        )
+    # Fetch conditionally, wrapped in a master progress bar (one sub bar per
+    # satellite). The bar is disabled on non-TTY runs; the LOGGER.info lines
+    # below remain the feedback path in that case.
+    with overpass_progress(len(selected)) as progress:
+        if "sentinel-1" in selected:
+            LOGGER.info("Fetching Sentinel-1 data...")
+            with progress.satellite("Sentinel-1") as step_cb:
+                sentinel1 = next_sentinel_pass(
+                    "sentinel1",
+                    geometry,
+                    n_day_past,
+                    pred_cloudiness,
+                    pred_tide,
+                    step_cb=step_cb,
+                )
 
-    if "sentinel-2" in selected:
-        LOGGER.info("Fetching Sentinel-2 data...")
+        if "sentinel-2" in selected:
+            LOGGER.info("Fetching Sentinel-2 data...")
+            with progress.satellite("Sentinel-2") as step_cb:
+                if needs_weather_backoff and not api_limit_reached():
+                    LOGGER.info(
+                        "Waiting 1 min to avoid hitting cumulative weather API quota."
+                    )
+                    step_cb("Waiting on weather API quota")
+                    time.sleep(60)
 
-        if needs_weather_backoff and not api_limit_reached():
-            LOGGER.info("Waiting 1 min to avoid hitting cumulative weather API quota.")
-            time.sleep(60)
+                sentinel2 = next_sentinel_pass(
+                    "sentinel2",
+                    geometry,
+                    n_day_past,
+                    pred_cloudiness,
+                    pred_tide,
+                    step_cb=step_cb,
+                )
 
-        sentinel2 = next_sentinel_pass(
-            "sentinel2", geometry, n_day_past, pred_cloudiness, pred_tide
-        )
+        if "nisar" in selected:
+            LOGGER.info("Fetching NISAR data...")
+            with progress.satellite("NISAR") as step_cb:
+                nisar = next_nisar_pass(
+                    geometry, n_day_past, arg_tide=pred_tide, step_cb=step_cb
+                )
 
-    if "nisar" in selected:
-        LOGGER.info("Fetching NISAR data...")
-        nisar = next_nisar_pass(geometry, n_day_past, arg_tide=pred_tide)
-
-    if "landsat" in selected:
-        LOGGER.info("Fetching Landsat data...")
-        landsat = next_landsat_pass(lat_min, lon_min, geometry, n_day_past, pred_tide)
+        if "landsat" in selected:
+            LOGGER.info("Fetching Landsat data...")
+            with progress.satellite("Landsat") as step_cb:
+                landsat = next_landsat_pass(
+                    lat_min, lon_min, geometry, n_day_past, pred_tide, step_cb=step_cb
+                )
 
     return {
         "sentinel-1": sentinel1,
@@ -328,6 +352,10 @@ def main(cli_args: Any = None):
         level=args.log_level.upper(),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+
+    # Silence noisy third-party INFO chatter (e.g. pyogrio "Created N records")
+    for noisy in ("pyogrio", "pyogrio._io", "fiona", "fiona._env"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
     from utils.opera_products import (
         export_opera_products,
