@@ -91,12 +91,11 @@ def build_collect_summaries(gdf: gpd.GeoDataFrame) -> list[str]:
 
 def create_s1_collection_plan(n_day_past: float) -> Path:
     """Prepare Sentinel-1 acquisition plan collection."""
-    urls_a = scrape_esa_download_urls(SENT1_URL, "sentinel-1a")
     urls_c = scrape_esa_download_urls(SENT1_URL, "sentinel-1c")
     urls_d = scrape_esa_download_urls(SENT1_URL, "sentinel-1d")
-    urls = urls_a + urls_c + urls_d
+    urls = urls_c + urls_d
 
-    platforms = ["S1A"] * len(urls_a) + ["S1C"] * len(urls_c) + ["S1D"] * len(urls_d)
+    platforms = ["S1C"] * len(urls_c) + ["S1D"] * len(urls_d)
 
     return build_sentinel_collection(
         urls,
