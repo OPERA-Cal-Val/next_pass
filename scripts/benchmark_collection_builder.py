@@ -21,7 +21,7 @@ import shutil
 import time
 from pathlib import Path
 
-from utils.sentinel_pass import create_s1_collection_plan, create_s2_collection_plan
+from next_pass.sentinel_pass import create_s1_collection_plan, create_s2_collection_plan
 
 logging.basicConfig(level=logging.WARNING)
 

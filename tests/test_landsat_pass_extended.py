@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date
 
 import pytest
-
-import utils.landsat_pass as landsat_pass
 from tests.helpers import FakePoint, FakePolygon
+
+import next_pass.landsat_pass as landsat_pass
 
 
 def test_shapely_to_esri_json_supports_point_and_polygon():
@@ -252,11 +252,10 @@ def test_next_landsat_pass_includes_na_rows_when_no_path_rows(monkeypatch):
 
 def test_estimate_landsat_overpass_time_western_hemisphere_stays_on_same_day():
     """Los Angeles: 10:12 AM local ≈ 18:04 UTC — no day rollover."""
-    from datetime import timezone
 
     result = landsat_pass.estimate_landsat_overpass_time("06/28/2026", 34.0, -118.0)
 
-    assert result.tzinfo == timezone.utc
+    assert result.tzinfo == UTC
     assert result.date().isoformat() == "2026-06-28"
     assert result.hour == 18
     assert result.minute == 4
@@ -269,13 +268,12 @@ def test_estimate_landsat_overpass_time_far_eastern_rolls_to_previous_day():
     which kept the local calendar date, producing a date one day too late for
     far-eastern longitudes.
     """
-    from datetime import timezone
 
     # lon = 175 (near dateline): utc_hour = 10.2 - 175/15 = -1.4666...
     # → previous day at 22:32 UTC
     result = landsat_pass.estimate_landsat_overpass_time("06/28/2026", -18.0, 175.0)
 
-    assert result.tzinfo == timezone.utc
+    assert result.tzinfo == UTC
     assert result.date().isoformat() == "2026-06-27"
     assert result.hour == 22
     assert result.minute == 32
@@ -283,12 +281,11 @@ def test_estimate_landsat_overpass_time_far_eastern_rolls_to_previous_day():
 
 def test_estimate_landsat_overpass_time_midpacific_boundary():
     """Just past the rollover boundary — confirms the day flips correctly."""
-    from datetime import timezone
 
     # lon = 155: utc_hour = 10.2 - 10.333 = -0.133 → previous day, 23:52 UTC
     result = landsat_pass.estimate_landsat_overpass_time("06/28/2026", 0.0, 155.0)
 
-    assert result.tzinfo == timezone.utc
+    assert result.tzinfo == UTC
     assert result.date().isoformat() == "2026-06-27"
     assert result.hour == 23
     assert result.minute == 52

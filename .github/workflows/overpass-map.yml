@@ -1,0 +1,48 @@
+name: Overpass Map
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/next_pass/viewer_assets/**'
+      - 'src/next_pass/schedule.py'
+      - '.github/workflows/overpass-map.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: overpass-map
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: prefix-dev/setup-pixi@v0.9.1
+        with:
+          pixi-version: latest
+          environments: default
+
+      - name: Build weekly overpass schedule
+        run: pixi run next-pass-schedule --days 7 --output site/data/upcoming_passes.parquet
+
+      - name: Assemble site
+        run: |
+          cp src/next_pass/viewer_assets/index.html site/index.html
+          touch site/.nojekyll
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          publish_branch: gh-pages
+          force_orphan: true
+          commit_message: 'Update overpass schedule (${{ github.event_name }})'

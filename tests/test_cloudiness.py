@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-import utils.cloudiness as cloudiness
 from tests.helpers import FakePolygon
+
+import next_pass.cloudiness as cloudiness
 
 
 class FakeResponse:
@@ -25,12 +26,10 @@ class FakeResponse:
 
 def test_as_utc_datetime_normalizes_naive_and_aware_values():
     naive = cloudiness.as_utc_datetime("2026-03-23T10:00:00")
-    aware = cloudiness.as_utc_datetime(
-        datetime(2026, 3, 23, 10, 0, tzinfo=timezone.utc)
-    )
+    aware = cloudiness.as_utc_datetime(datetime(2026, 3, 23, 10, 0, tzinfo=UTC))
 
-    assert naive.tzinfo == timezone.utc
-    assert aware.tzinfo == timezone.utc
+    assert naive.tzinfo == UTC
+    assert aware.tzinfo == UTC
 
 
 def test_get_cloudiness_at_point_exact_and_nearest():
@@ -138,12 +137,12 @@ def test_get_overpass_cloudiness_chooses_future_and_historical_backends(monkeypa
 
     future = cloudiness.get_overpass_cloudiness(
         {"type": "Polygon", "coordinates": []},
-        datetime.now(timezone.utc) + timedelta(days=1),
+        datetime.now(UTC) + timedelta(days=1),
         sampling_method="grid",
     )
     past = cloudiness.get_overpass_cloudiness(
         {"type": "Polygon", "coordinates": []},
-        datetime.now(timezone.utc) - timedelta(days=1),
+        datetime.now(UTC) - timedelta(days=1),
         sampling_method="grid",
     )
 
@@ -156,10 +155,9 @@ def test_make_get_cloudiness_for_row_respects_14_day_limit(monkeypatch):
     monkeypatch.setattr(
         cloudiness,
         "get_overpass_cloudiness",
-        lambda polygon_geojson, target_datetime, num_samples, allow_nearest, sampling_method: captured.append(
-            num_samples
-        )
-        or 33.0,
+        lambda polygon_geojson, target_datetime, num_samples, allow_nearest, sampling_method: (
+            captured.append(num_samples) or 33.0
+        ),
     )
 
     get_for_row = cloudiness.make_get_cloudiness_for_row(FakePolygon("aoi"))
@@ -168,8 +166,8 @@ def test_make_get_cloudiness_for_row_respects_14_day_limit(monkeypatch):
         (),
         {
             "begin_date": [
-                datetime.now(timezone.utc) + timedelta(days=2),
-                datetime.now(timezone.utc) + timedelta(days=20),
+                datetime.now(UTC) + timedelta(days=2),
+                datetime.now(UTC) + timedelta(days=20),
             ],
             "geometry": FakePolygon("collect"),
         },

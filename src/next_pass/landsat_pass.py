@@ -2,7 +2,7 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import requests
 from shapely.geometry import Point, Polygon
@@ -10,8 +10,8 @@ from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from tabulate import tabulate
 
-from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
-from utils.utils import (
+from next_pass.tide_prediction import get_stations_in_aoi, get_tide_info_batch
+from next_pass.utils import (
     HOURS_PER_LONGITUDE_DEGREE,
     LANDSAT_EQUATORIAL_CROSSING_HOUR,
     TIDE_PREDICTION_WINDOW_DAYS,
@@ -30,8 +30,7 @@ LEGACY_CYCLES_FULL_URL = (
     "cycles_full.json"
 )
 CYCLE_REFERENCE_URL = (
-    "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json/"
-    "cycles.json"
+    "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json/cycles.json"
 )
 CYCLE_PATH_ROW_URL = (
     "https://landsat.usgs.gov/sites/default/files/landsat_acq/assets/json/"
@@ -72,7 +71,7 @@ def estimate_landsat_overpass_time(date_str: str, lat: float, lon: float) -> dat
         >>> estimate_landsat_overpass_time("06/28/2026", -35.0, 150.0)
         # Sydney: ~10:12 AM local ≈ 00:12 UTC same day
     """
-    from datetime import time, timezone
+    from datetime import time
 
     # Parse the calendar date (MM/DD/YYYY format)
     date_obj = datetime.strptime(date_str, DATE_FORMAT).date()
@@ -86,7 +85,7 @@ def estimate_landsat_overpass_time(date_str: str, lat: float, lon: float) -> dat
     local_solar_offset_hours = lon / HOURS_PER_LONGITUDE_DEGREE
     utc_hour = local_solar_hour - local_solar_offset_hours
 
-    base = datetime.combine(date_obj, time.min, tzinfo=timezone.utc)
+    base = datetime.combine(date_obj, time.min, tzinfo=UTC)
     return base + timedelta(hours=utc_hour)
 
 
@@ -104,14 +103,13 @@ class LandsatScheduleSource:
 
 def format_date_lines(date_strings: list[str], per_line: int = 5) -> str:
     """Wrap Landsat pass dates across multiple lines."""
-    from datetime import timezone
 
     formatted_dates = [
         date_str
         + (
             " (P)"
-            if datetime.strptime(date_str, DATE_FORMAT).replace(tzinfo=timezone.utc)
-            < datetime.now(timezone.utc)
+            if datetime.strptime(date_str, DATE_FORMAT).replace(tzinfo=UTC)
+            < datetime.now(UTC)
             else ""
         )
         for date_str in date_strings
@@ -559,8 +557,7 @@ def next_landsat_pass(
                 noaa_stations = get_stations_in_aoi(geometryAOI)
                 if not noaa_stations:
                     logger.warning(
-                        "No NOAA stations found in AOI - "
-                        "tide predictions will be empty"
+                        "No NOAA stations found in AOI - tide predictions will be empty"
                     )
             except Exception as e:
                 logger.warning("Could not retrieve NOAA stations for AOI: %s", e)
@@ -568,7 +565,7 @@ def next_landsat_pass(
 
             if noaa_stations:
                 logger.info(
-                    "Calculating tides for Landsat overpasses using %d " "stations ...",
+                    "Calculating tides for Landsat overpasses using %d stations ...",
                     len(noaa_stations),
                 )
                 # Collect ALL target times across all keys into a single batch

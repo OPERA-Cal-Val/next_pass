@@ -1,7 +1,9 @@
 # NEXT PASS
 
+[![PyPI version](https://img.shields.io/pypi/v/next-pass?logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/next-pass/)
+[![Python versions](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue?logo=python&logoColor=white)](https://pypi.org/project/next-pass/)
 [![CI](https://github.com/OPERA-Cal-Val/next_pass/actions/workflows/ci.yml/badge.svg)](https://github.com/OPERA-Cal-Val/next_pass/actions/workflows/ci.yml)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Overpass map](https://img.shields.io/badge/overpass%20map-live-1baf7a?logo=leaflet&logoColor=white)](https://opera-cal-val.github.io/next_pass/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 Predict the **next satellite overpass** for a point, bounding box, or KML AOI — supporting **Sentinel‑1**, **Sentinel‑2**, **Landsat‑8**, **Landsat‑9**, and **NISAR**.
@@ -16,6 +18,7 @@ Optionally filter by **OPERA product families**, **estimate cloudiness** for the
 - **OPERA product filters**: limit search to product families (e.g., `DSWX-HLS_V1`, `DSWX-S1_V1`)
 - **Cloudiness prediction**: for next S1/S2 overpasses (`-c`)
 - **Email** notifications: send S1/S2 results via SMTP (`--email`)
+- **Interactive overpass map**: a daily-updated GitHub Pages map of the coming week's passes, plus a local viewer (`next-pass-viewer`)
 - **Examples included**: `examples/`
 
 ---
@@ -24,58 +27,65 @@ Optionally filter by **OPERA product families**, **estimate cloudiness** for the
 
 ```
 next_pass/
-├─ examples/          # Jupyter notebooks and sample workflows
-├─ utils/             # Core helpers (Sentinel/Landsat passes, cloudiness, OPERA products, plotting, I/O)
-├─ next_pass.py       # CLI entry point (used by the `next-pass` console script)
-├─ environment.yml    # Conda/mamba environment for development and notebooks
-├─ requirements.txt   # Runtime dependency list (used by pyproject / pip)
-├─ pyproject.toml     # Modern packaging metadata (setuptools backend)
-├─ setup.py           # Legacy shim for older tooling
-└─ LICENSE            # Apache-2.0
+├─ examples/            # Jupyter notebooks and sample workflows
+├─ src/next_pass/       # The package: CLI, per-sensor pass modules, schedule + viewer
+│  └─ viewer_assets/    # Static HTML for the interactive overpass map
+├─ tests/               # Pytest suite
+├─ pyproject.toml       # Packaging metadata + pixi environments + ruff config
+└─ LICENSE              # Apache-2.0
 ```
 
 ---
 
 ## Installation
 
-The recommended way to install `next-pass` is from PyPI using `pip`:
+### Pixi (recommended for development)
+
+Install [pixi](https://pixi.sh/latest/#installation), then:
+
+```bash
+git clone https://github.com/OPERA-Cal-Val/next_pass.git
+cd next_pass
+pixi install
+pixi run next-pass --help
+```
+
+For JupyterLab (with `jupyter-collaboration` for real-time collaborative editing):
+
+```bash
+pixi run jupyter lab
+```
+
+### PyPI
 
 ```bash
 pip install next-pass
 ```
 
-### Development Installation
+---
 
-If you would like to contribute to the project or install it from source, clone the repository:
+## Interactive overpass map
 
-```bash
-git clone https://github.com/OPERA-Cal-Val/next_pass.git
-cd next_pass
-```
+A GitHub Actions cron job runs daily: it precomputes the coming week of passes for
+all supported sensors into a GeoParquet file and publishes it, together with an
+interactive map, to the `gh-pages` branch (GitHub Pages). Open the project's
+GitHub Pages site, drop a point or draw a box, pick a date range, and see which
+sensors will pass over that AOI — built for rapidly triaging which products will
+be available over a disaster-response AOI.
 
-Create a fresh environment **(recommended)**:
-
-```bash
-mamba env create -f environment.yml
-mamba activate next_pass
-```
-or with conda:
+The same map runs locally against any schedule file:
 
 ```bash
-conda env create -f environment.yml
-conda activate next_pass
+pixi run next-pass-schedule --days 7 --output upcoming_passes.parquet
+pixi run next-pass-viewer --data upcoming_passes.parquet
 ```
 
-Alternatively, install the runtime dependencies directly:
-
-```bash
-conda install -c conda-forge --yes --file requirements.txt
-```
-
-Install the package (optional but recommended):
-```bash
-pip install -e .
-```
+`next-pass-schedule` writes a GeoParquet (plus a `.meta.json` sidecar) with one
+row per planned pass: `sensor`, `platform`, `mode`, `orbit_direction`, `track`,
+`begin_time`/`end_time` (UTC), `time_is_estimated`, and the footprint `geometry`.
+Sentinel times come from ESA acquisition plans; Landsat and NISAR times are
+local-solar-time estimates (roughly ±40 min for NISAR frames, up to ±1–2 h for
+Landsat path-level swaths — run the `next-pass` CLI for precise times over an AOI).
 
 ---
 

@@ -1,16 +1,16 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
 from tabulate import tabulate
 
-from utils.cloudiness import make_get_cloudiness_for_row
-from utils.collection_builder import build_sentinel_collection
-from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
-from utils.utils import find_intersecting_collects, scrape_esa_download_urls
+from next_pass.cloudiness import make_get_cloudiness_for_row
+from next_pass.collection_builder import build_sentinel_collection
+from next_pass.tide_prediction import get_stations_in_aoi, get_tide_info_batch
+from next_pass.utils import find_intersecting_collects, scrape_esa_download_urls
 
 LOGGER = logging.getLogger("sentinel_pass")
 
@@ -21,8 +21,7 @@ SENT2_URL = "https://sentinels.copernicus.eu/web/sentinel/copernicus/sentinel-2/
 def format_date_lines(dates: list[datetime], per_line: int = 5) -> str:
     """Wrap Sentinel acquisition dates across multiple lines."""
     formatted_dates = [
-        d.strftime("%Y-%m-%d %H:%M:%S")
-        + (" (P)" if d < datetime.now(timezone.utc) else "")
+        d.strftime("%Y-%m-%d %H:%M:%S") + (" (P)" if d < datetime.now(UTC) else "")
         for d in dates
     ]
     return "\n".join(
@@ -309,7 +308,7 @@ def next_sentinel_pass(
                 "next_collect_geometry": None,
                 "intersection_pct": None,
             }
-    except (IOError, OSError) as e:
+    except OSError as e:
         LOGGER.error("Error reading Sentinel plan file: %s", e)
         return {
             "next_collect_info": "Error reading plan file.",
@@ -400,8 +399,8 @@ def next_sentinel_pass(
                     row_isos = []
                     for t in dates:
                         if isinstance(t, datetime):
-                            if t.tzinfo is not None and t.tzinfo != timezone.utc:
-                                t = t.astimezone(timezone.utc)
+                            if t.tzinfo is not None and t.tzinfo != UTC:
+                                t = t.astimezone(UTC)
                             row_isos.append(t.strftime("%Y-%m-%dT%H:%M:%S"))
                         else:
                             row_isos.append(t)

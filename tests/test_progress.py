@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import utils.progress as progress_mod
+import next_pass.progress as progress_mod
 
 
 def test_progress_enabled_false_when_stdout_not_a_tty(monkeypatch):

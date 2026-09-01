@@ -1,6 +1,6 @@
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import earthaccess
@@ -10,8 +10,8 @@ from dateutil.relativedelta import relativedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
-from utils.cloudiness import get_cloudiness
-from utils.utils import bbox_to_geometry, bbox_type
+from next_pass.cloudiness import get_cloudiness
+from next_pass.utils import bbox_to_geometry, bbox_type
 
 LOGGER = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ def find_print_available_opera_products(
     else:
         # Standard Single Date Logic
         if date_str == "today":
-            today = datetime.now(timezone.utc).date()
+            today = datetime.now(UTC).date()
         else:
             today = datetime.strptime(date_str, "%Y-%m-%d").date()
 

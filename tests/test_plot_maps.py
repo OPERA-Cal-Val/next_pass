@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import utils.plot_maps as plot_maps
 from tests.helpers import FakeFrame, FakePolygon
+
+import next_pass.plot_maps as plot_maps
 
 
 def _make_polygon(module, name="poly"):
@@ -94,7 +95,7 @@ def test_make_opera_granule_drcs_map_handles_old_granules(tmp_path, monkeypatch)
     )
 
     plot_maps.make_opera_granule_drcs_map(
-        datetime(2026, 3, 21, tzinfo=timezone.utc),
+        datetime(2026, 3, 21, tzinfo=UTC),
         results,
         result_s1={},
         result_s2={},

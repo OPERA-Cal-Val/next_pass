@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import utils.sentinel_pass as sentinel_pass
 from tests.helpers import FakeFrame, FakePolygon
+
+import next_pass.sentinel_pass as sentinel_pass
 
 
 def test_unique_geometry_per_orbit_preserves_platform_groups(monkeypatch):
@@ -15,14 +16,14 @@ def test_unique_geometry_per_orbit_preserves_platform_groups(monkeypatch):
             {
                 "orbit_relative": 12,
                 "platform": "S1A",
-                "begin_date": datetime(2026, 3, 20, tzinfo=timezone.utc),
+                "begin_date": datetime(2026, 3, 20, tzinfo=UTC),
                 "geometry": FakePolygon("g1"),
                 "intersection_pct": 80.0,
             },
             {
                 "orbit_relative": 12,
                 "platform": "S1C",
-                "begin_date": datetime(2026, 3, 21, tzinfo=timezone.utc),
+                "begin_date": datetime(2026, 3, 21, tzinfo=UTC),
                 "geometry": FakePolygon("g2"),
                 "intersection_pct": 70.0,
             },
@@ -75,14 +76,14 @@ def test_next_sentinel_pass_returns_grouped_results_without_cloudiness(monkeypat
         lambda gdf, geometry: FakeFrame(
             [
                 {
-                    "begin_date": datetime(2026, 3, 20, tzinfo=timezone.utc),
+                    "begin_date": datetime(2026, 3, 20, tzinfo=UTC),
                     "orbit_relative": 44,
                     "platform": "S1A",
                     "geometry": FakePolygon("geom"),
                     "intersection_pct": 77.0,
                 },
                 {
-                    "begin_date": datetime(2026, 3, 20, tzinfo=timezone.utc),
+                    "begin_date": datetime(2026, 3, 20, tzinfo=UTC),
                     "orbit_relative": 44,
                     "platform": "S1A",
                     "geometry": FakePolygon("geom"),
@@ -97,7 +98,7 @@ def test_next_sentinel_pass_returns_grouped_results_without_cloudiness(monkeypat
         lambda collects: FakeFrame(
             [
                 {
-                    "begin_date": [datetime(2026, 3, 20, tzinfo=timezone.utc)],
+                    "begin_date": [datetime(2026, 3, 20, tzinfo=UTC)],
                     "orbit_relative": 44,
                     "platform": "S1A",
                     "geometry": FakePolygon("geom"),
@@ -133,7 +134,7 @@ def test_next_sentinel_pass_returns_cloudiness_when_requested(monkeypatch):
         lambda gdf, geometry: FakeFrame(
             [
                 {
-                    "begin_date": datetime(2026, 3, 20, tzinfo=timezone.utc),
+                    "begin_date": datetime(2026, 3, 20, tzinfo=UTC),
                     "orbit_relative": 51,
                     "geometry": FakePolygon("geom"),
                     "intersection_pct": 40.0,
@@ -144,7 +145,7 @@ def test_next_sentinel_pass_returns_cloudiness_when_requested(monkeypatch):
     monkeypatch.setattr(
         sentinel_pass,
         "make_get_cloudiness_for_row",
-        lambda geometry: (lambda row: [12.5]),
+        lambda geometry: lambda row: [12.5],
     )
     monkeypatch.setattr(
         sentinel_pass, "format_collects", lambda grouped: "cloudy-table"
@@ -168,9 +169,7 @@ def test_next_sentinel_pass_returns_no_collect_message(monkeypatch):
     monkeypatch.setattr(
         sentinel_pass.gpd,
         "read_file",
-        lambda path: FakeFrame(
-            [{"end_date": datetime(2026, 3, 30, tzinfo=timezone.utc)}]
-        ),
+        lambda path: FakeFrame([{"end_date": datetime(2026, 3, 30, tzinfo=UTC)}]),
     )
     monkeypatch.setattr(
         sentinel_pass,
@@ -203,7 +202,7 @@ def test_next_sentinel_pass_returns_tide_for_point_aoi(monkeypatch):
         lambda gdf, geometry: FakeFrame(
             [
                 {
-                    "begin_date": datetime(2026, 3, 20, tzinfo=timezone.utc),
+                    "begin_date": datetime(2026, 3, 20, tzinfo=UTC),
                     "orbit_relative": 51,
                     "geometry": FakePolygon("geom"),
                     "intersection_pct": 40.0,

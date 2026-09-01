@@ -53,14 +53,14 @@ def test_runtime_dependencies_are_installed():
 def test_core_modules_import_with_real_dependencies():
     modules = [
         "next_pass",
-        "utils.utils",
-        "utils.cloudiness",
-        "utils.collection_builder",
-        "utils.landsat_pass",
-        "utils.nisar_pass",
-        "utils.opera_products",
-        "utils.plot_maps",
-        "utils.sentinel_pass",
+        "next_pass.utils",
+        "next_pass.cloudiness",
+        "next_pass.collection_builder",
+        "next_pass.landsat_pass",
+        "next_pass.nisar_pass",
+        "next_pass.opera_products",
+        "next_pass.plot_maps",
+        "next_pass.sentinel_pass",
     ]
     script = (
         "import importlib, json\n"
@@ -86,14 +86,14 @@ def test_core_modules_import_with_real_dependencies():
         f"stdout:\n{result.stdout}\n"
         f"stderr:\n{result.stderr}"
     )
-    assert (
-        result.stdout.strip() == "{}"
-    ), f"Core imports failed: {result.stdout.strip()}"
+    assert result.stdout.strip() == "{}", (
+        f"Core imports failed: {result.stdout.strip()}"
+    )
 
 
 def test_cli_help_starts_successfully():
     result = subprocess.run(
-        [sys.executable, str(ROOT / "next_pass.py"), "--help"],
+        [sys.executable, "-m", "next_pass", "--help"],
         capture_output=True,
         text=True,
         cwd=ROOT,
@@ -101,9 +101,7 @@ def test_cli_help_starts_successfully():
     )
 
     assert result.returncode == 0, (
-        "CLI help failed to start.\n"
-        f"stdout:\n{result.stdout}\n"
-        f"stderr:\n{result.stderr}"
+        f"CLI help failed to start.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
     assert "Find next satellite overpass date." in result.stdout
     assert "--bbox" in result.stdout

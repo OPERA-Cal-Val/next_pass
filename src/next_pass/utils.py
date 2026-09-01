@@ -5,9 +5,8 @@ import os
 import re
 import time
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
 from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
@@ -62,7 +61,7 @@ class Tee:
             stream.flush()
 
 
-def scrape_esa_download_urls(url: str, class_: str, max_attempts: int = 3) -> List[str]:
+def scrape_esa_download_urls(url: str, class_: str, max_attempts: int = 3) -> list[str]:
     """Scrape ESA website for KML download URLs.
 
     Retries on HTTP 429 (rate limiting) with bounded exponential backoff
@@ -119,7 +118,7 @@ def download_kml(url: str, out_path: str = "collection.kml") -> Path:
     return path
 
 
-def parse_placemark(placemark: etree.Element) -> Optional[Tuple]:
+def parse_placemark(placemark: etree.Element) -> tuple | None:
     """Parse a single placemark from KML."""
     ns = ".//{http://www.opengis.net/kml/2.2}"
     # Replace 'Z' with '+00:00' for Python 3.10 compatibility
@@ -165,7 +164,7 @@ def parse_kml(kml_path: Path) -> gpd.GeoDataFrame:
     )
 
 
-def parse_kml_polygon_coords(kml_file: Path) -> List[Tuple[float, float]]:
+def parse_kml_polygon_coords(kml_file: Path) -> list[tuple[float, float]]:
     """Extract coordinates from a KML polygon."""
     tree = ET.parse(kml_file)
     ns = {"kml": "http://www.opengis.net/kml/2.2"}
@@ -173,7 +172,7 @@ def parse_kml_polygon_coords(kml_file: Path) -> List[Tuple[float, float]]:
     return [tuple(map(float, coord.split(",")[:2])) for coord in coords_text.split()]
 
 
-def create_polygon_from_kml(kml_file: Path) -> Optional[Polygon]:
+def create_polygon_from_kml(kml_file: Path) -> Polygon | None:
     """Create a Shapely polygon from a KML file."""
     coordinates = parse_kml_polygon_coords(kml_file)
     return Polygon(coordinates) if coordinates else None
@@ -181,9 +180,9 @@ def create_polygon_from_kml(kml_file: Path) -> Optional[Polygon]:
 
 def find_intersecting_collects(
     gdf: gpd.GeoDataFrame,
-    geometryAOI: Union[Polygon, Point],
-    mode: Optional[str] = None,
-    orbit_relative: Optional[int] = None,
+    geometryAOI: Polygon | Point,
+    mode: str | None = None,
+    orbit_relative: int | None = None,
 ) -> gpd.GeoDataFrame:
     intersects = gdf[gdf.intersects(geometryAOI)].copy()
 
@@ -261,7 +260,7 @@ def geometry_from_file(path: str | Path):
 
     # ---- GeoJSON ----
     if suffix in (".geojson", ".json"):
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
 
         # FeatureCollection
@@ -332,8 +331,7 @@ def bbox_type(arg_coords):
 
         if lat_min > lat_max:
             LOGGER.warning(
-                "Minimum latitude %.6f is greater than "
-                "maximum %.6f; swapping values.",
+                "Minimum latitude %.6f is greater than maximum %.6f; swapping values.",
                 lat_min,
                 lat_max,
             )
@@ -341,8 +339,7 @@ def bbox_type(arg_coords):
 
         if lon_min > lon_max:
             LOGGER.warning(
-                "Minimum longitude %.6f is greater "
-                "than maximum %.6f; swapping values.",
+                "Minimum longitude %.6f is greater than maximum %.6f; swapping values.",
                 lon_min,
                 lon_max,
             )
@@ -352,7 +349,7 @@ def bbox_type(arg_coords):
 
     except ValueError:
         raise argparse.ArgumentTypeError(
-            "Provide either 2 or 4 float values " "or a path to a valid .kml file."
+            "Provide either 2 or 4 float values or a path to a valid .kml file."
         )
 
 
@@ -482,8 +479,7 @@ def valid_drcs_datetime(s):
 
     except ValueError:
         raise argparse.ArgumentTypeError(
-            f"Invalid DRCS date-time format: '{s}'. "
-            "Expected format: YYYY-MM-DDTHH:MM"
+            f"Invalid DRCS date-time format: '{s}'. Expected format: YYYY-MM-DDTHH:MM"
         )
 
 
@@ -579,15 +575,13 @@ def check_opera_overpass_intersection(
         if sat_name == "Landsat":
             dt_strings = re.findall(r"\d{2}/\d{2}/\d{4}", line)
             dt_list = [
-                datetime.strptime(dt_str, "%m/%d/%Y").replace(tzinfo=timezone.utc)
+                datetime.strptime(dt_str, "%m/%d/%Y").replace(tzinfo=UTC)
                 for dt_str in dt_strings
             ]
         else:
             dt_strings = re.findall(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", line)
             dt_list = [
-                datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(
-                    tzinfo=timezone.utc
-                )
+                datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
                 for dt_str in dt_strings
             ]
 
@@ -614,7 +608,7 @@ def check_opera_overpass_intersection(
             orbit_info = f"Rel. orbit {columns[2]}"
 
         # Get current time in UTC then Split into past and future
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         for dt in dt_list:
             # get local and event times from UTC time
             dt_local = dt.astimezone()
@@ -720,11 +714,11 @@ def format_satellite_arg(sat_list):
 
 
 def filter_dates_beyond_window(
-    dates: List[Union[str, datetime]],
-    tide_data: List,
+    dates: list[str | datetime],
+    tide_data: list,
     max_days: int = TIDE_PREDICTION_WINDOW_DAYS,
-    date_format: Optional[str] = None,
-) -> Tuple[List, List, int, Optional[datetime.date], Optional[datetime.date]]:
+    date_format: str | None = None,
+) -> tuple[list, list, int, date | None, date | None]:
     """
     Filter dates and tide data to only those within max_days from now.
 
@@ -751,9 +745,9 @@ def filter_dates_beyond_window(
         >>> filtered_dates, filtered_tides, count, min_d, max_d = \\
         ...     filter_dates_beyond_window(dates, tides, max_days=60, date_format="%m/%d/%Y")
     """
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    max_future_date = datetime.now(timezone.utc).date() + timedelta(days=max_days)
+    max_future_date = datetime.now(UTC).date() + timedelta(days=max_days)
 
     filtered_dates = []
     filtered_tide_data = []

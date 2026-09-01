@@ -4,7 +4,7 @@ import json
 
 from shapely.geometry import Point, Polygon
 
-import utils.tide_prediction as tide_prediction
+import next_pass.tide_prediction as tide_prediction
 
 
 def test_ensure_station_cache_defaults_to_scratch(monkeypatch, tmp_path):

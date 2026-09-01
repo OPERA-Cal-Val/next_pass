@@ -1,4 +1,9 @@
-#!/usr/bin/env python3
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("next-pass")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 import argparse
 import logging
@@ -7,9 +12,9 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
-from utils.utils import format_satellite_arg
+from next_pass.utils import format_satellite_arg
 
 LOGGER = logging.getLogger("next_pass")
 
@@ -28,7 +33,7 @@ KML File:
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for CLI inputs."""
-    from utils.utils import valid_drcs_datetime
+    from next_pass.utils import valid_drcs_datetime
 
     desc = "Find next satellite overpass date."
     parser = argparse.ArgumentParser(
@@ -130,8 +135,7 @@ def create_parser() -> argparse.ArgumentParser:
         type=valid_drcs_datetime,
         metavar="YYYY-MM-DDTHH:MM",
         help=(
-            "Generate DRCS HTML file using a UTC event date "
-            "in format YYYY-MM-DDTHH:MM"
+            "Generate DRCS HTML file using a UTC event date in format YYYY-MM-DDTHH:MM"
         ),
     )
     parser.add_argument(
@@ -145,12 +149,12 @@ def create_parser() -> argparse.ArgumentParser:
 def find_next_overpass(args: argparse.Namespace, timestamp_dir: Path) -> dict:
     """Main logic for finding the next satellite overpasses."""
 
-    from utils.cloudiness import api_limit_reached
-    from utils.landsat_pass import next_landsat_pass
-    from utils.nisar_pass import next_nisar_pass
-    from utils.progress import overpass_progress
-    from utils.sentinel_pass import next_sentinel_pass
-    from utils.utils import bbox_to_geometry, bbox_type
+    from next_pass.cloudiness import api_limit_reached
+    from next_pass.landsat_pass import next_landsat_pass
+    from next_pass.nisar_pass import next_nisar_pass
+    from next_pass.progress import overpass_progress
+    from next_pass.sentinel_pass import next_sentinel_pass
+    from next_pass.utils import bbox_to_geometry, bbox_type
 
     bbox = bbox_type(args.bbox)
     n_day_past = args.look_back
@@ -277,14 +281,14 @@ def send_email(subject: str, body: str, attachment: Path | None = None) -> None:
 
 
 def run_next_pass(
-    bbox: List[float] | str,
+    bbox: list[float] | str,
     number_of_dates: int = 5,
     date: str | None = None,
     functionality: str = "both",
     compute_cloudiness: bool = False,
     compute_tide: bool = False,
-    products: List[str] | str | None = None,
-    satellites: List[str] | str | None = None,
+    products: list[str] | str | None = None,
+    satellites: list[str] | str | None = None,
     include_hls: bool = False,
 ):
     """
@@ -357,16 +361,16 @@ def main(cli_args: Any = None):
     for noisy in ("pyogrio", "pyogrio._io", "fiona", "fiona._env"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
-    from utils.opera_products import (
+    from next_pass.opera_products import (
         export_opera_products,
         find_print_available_opera_products,
     )
-    from utils.plot_maps import (
+    from next_pass.plot_maps import (
         make_opera_granule_drcs_map,
         make_opera_granule_map,
         make_overpasses_map,
     )
-    from utils.utils import Tee
+    from next_pass.utils import Tee
 
     # Create a timestamp string
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -452,7 +456,7 @@ def main(cli_args: Any = None):
         log.close()
         sys.stdout = sys.__stdout__
         sys.stderr = sys.__stderr__
-        with open(log_file, "r", encoding="utf-8") as f:
+        with open(log_file, encoding="utf-8") as f:
             lines = f.readlines()
 
         # Skip the first few lines (log header, bbox line, etc.)
@@ -477,6 +481,10 @@ def main(cli_args: Any = None):
         log.close()
 
     return timestamp_dir
+
+
+def cli() -> None:
+    main()
 
 
 if __name__ == "__main__":

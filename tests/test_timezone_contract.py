@@ -6,7 +6,7 @@ datetimes and accept naive datetimes representing UTC.
 """
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -14,7 +14,7 @@ import pytest
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.tide_prediction import (  # noqa: E402
+from next_pass.tide_prediction import (  # noqa: E402
     _find_nearest_hilo_label,
     _find_tide_direction,
     interpolate_tide,
@@ -30,7 +30,7 @@ class TestTimezoneContractEnforcement:
         values = [1.15, 1.23, 1.30]
 
         # Timezone-aware datetime (UTC)
-        dt_aware = datetime(2026, 6, 28, 18, 30, tzinfo=timezone.utc)
+        dt_aware = datetime(2026, 6, 28, 18, 30, tzinfo=UTC)
 
         with pytest.raises(TypeError) as excinfo:
             interpolate_tide(times, values, dt_aware)
@@ -59,7 +59,7 @@ class TestTimezoneContractEnforcement:
         values = [1.15, 1.23, 1.30]
 
         # Timezone-aware datetime
-        dt_aware = datetime(2026, 6, 28, 18, 30, tzinfo=timezone.utc)
+        dt_aware = datetime(2026, 6, 28, 18, 30, tzinfo=UTC)
 
         with pytest.raises(TypeError) as excinfo:
             _find_tide_direction(times, values, dt_aware)
@@ -89,7 +89,7 @@ class TestTimezoneContractEnforcement:
         ]
 
         # Timezone-aware datetime
-        dt_aware = datetime(2026, 6, 28, 18, 30, tzinfo=timezone.utc)
+        dt_aware = datetime(2026, 6, 28, 18, 30, tzinfo=UTC)
 
         with pytest.raises(TypeError) as excinfo:
             _find_nearest_hilo_label(hilo_predictions, dt_aware)
@@ -121,7 +121,7 @@ class TestErrorMessageQuality:
         """Error message should tell developer which timezone was detected."""
         times = ["2026-06-28T17:00:00", "2026-06-28T18:00:00"]
         values = [1.15, 1.23]
-        dt_aware = datetime(2026, 6, 28, 18, 0, tzinfo=timezone.utc)
+        dt_aware = datetime(2026, 6, 28, 18, 0, tzinfo=UTC)
 
         with pytest.raises(TypeError) as excinfo:
             interpolate_tide(times, values, dt_aware)
@@ -134,7 +134,7 @@ class TestErrorMessageQuality:
         """All functions should have consistent error message format."""
         times = ["2026-06-28T17:00:00", "2026-06-28T18:00:00"]
         values = [1.15, 1.23]
-        dt_aware = datetime(2026, 6, 28, 18, 0, tzinfo=timezone.utc)
+        dt_aware = datetime(2026, 6, 28, 18, 0, tzinfo=UTC)
 
         errors = []
 

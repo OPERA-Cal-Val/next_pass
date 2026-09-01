@@ -5,9 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "next-pass"
 version = "1.4.0"
-description = "Predict the next satellite overpass (S1/S2/L8/L9) over an AOI and query OPERA products."
+description = "Predict the next satellite overpass (S1/S2/L8/L9/NISAR) over an AOI and query OPERA products."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 license = { file = "LICENSE" }
 
@@ -22,6 +22,7 @@ keywords = [
   "sentinel-1",
   "sentinel-2",
   "landsat",
+  "nisar",
   "opera",
   "earth-observation",
   "overpass",
@@ -31,17 +32,39 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: GIS",
 ]
 
-dynamic = ["dependencies"]
+dependencies = [
+  "asf_search",
+  "beautifulsoup4",
+  "boto3",
+  "earthaccess",
+  "geopandas",
+  "leafmap",
+  "lxml",
+  "openpyxl>=3.1.5",
+  "pyarrow",
+  "rasterio",
+  "rich>=13.0.0",
+  "tabulate",
+  "timezonefinder",
+  "yagmail",
+]
 
-[tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
-
+[project.optional-dependencies]
+dev = [
+  "pre-commit",
+  "pytest",
+  "pytest-cov",
+  "ruff",
+]
 
 [project.urls]
 Homepage = "https://github.com/OPERA-Cal-Val/next_pass"
@@ -49,43 +72,30 @@ Source = "https://github.com/OPERA-Cal-Val/next_pass"
 Issues = "https://github.com/OPERA-Cal-Val/next_pass/issues"
 
 [project.scripts]
-"next-pass" = "next_pass:main"
-
-[tool.setuptools]
-py-modules = ["next_pass"]
+next-pass = "next_pass:cli"
+next-pass-schedule = "next_pass.schedule:cli"
+next-pass-viewer = "next_pass.viewer:main"
 
 [tool.setuptools.packages.find]
-include = ["utils"]
+where = ["src"]
 
-[tool.black]
+[tool.setuptools.package-data]
+next_pass = ["viewer_assets/*"]
+
+[tool.ruff]
 line-length = 88
-target-version = ['py310', 'py311', 'py312', 'py313']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
+src = ["src", "tests"]
 
-[tool.isort]
-profile = "black"
-line_length = 88
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/next_pass/__init__.py" = ["F401"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -97,13 +107,13 @@ addopts = [
 markers = [
     "integration: marks tests as integration tests (hitting live APIs)",
     "slow: marks tests as slow running",
+    "installation: validates that the real runtime environment is installed and the CLI can start",
 ]
 
 [tool.coverage.run]
-source = ["utils", "."]
+source = ["next_pass"]
 omit = [
     "tests/*",
-    "setup.py",
     "*/__pycache__/*",
     "*/site-packages/*",
 ]
@@ -118,3 +128,64 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "@abstractmethod",
 ]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
+
+[tool.pixi.pypi-dependencies]
+next-pass = { path = ".", editable = true }
+
+[tool.pixi.feature.py311.dependencies]
+python = "3.11.*"
+
+[tool.pixi.feature.py312.dependencies]
+python = "3.12.*"
+
+[tool.pixi.feature.py313.dependencies]
+python = "3.13.*"
+
+[tool.pixi.feature.lint.dependencies]
+ruff = ">=0.16.5,<0.17"
+
+[tool.pixi.feature.lint.tasks]
+lint = "ruff check"
+fix = "ruff check --fix"
+format = "ruff format"
+format-check = "ruff format --diff"
+
+[tool.pixi.environments]
+default = { features = ["py313", "lint"], solve-group = "py313" }
+py311 = { features = ["py311"], solve-group = "py311" }
+py312 = { features = ["py312"], solve-group = "py312" }
+lint = { features = ["lint"], no-default-feature = true }
+
+[tool.pixi.tasks]
+test = "pytest tests"
+cov = "pytest tests --cov=next_pass --cov-report=term-missing"
+schedule = "next-pass-schedule"
+viewer = "next-pass-viewer"
+lab = "jupyter lab"
+
+[tool.pixi.dependencies]
+python = ">=3.11"
+asf_search = ">=13.0.0,<14"
+beautifulsoup4 = ">=4.15.0,<5"
+boto3 = ">=1.43.56,<2"
+earthaccess = ">=0.9,<0.19"
+geopandas = ">=1.1.4,<2"
+leafmap = ">=0.63.0,<0.64"
+lxml = ">=6.1.2,<7"
+openpyxl = ">=3.1.5"
+pyarrow = ">=25.0.0,<26"
+rasterio = ">=1.4,<2"
+rich = ">=13"
+tabulate = ">=0.10.0,<0.11"
+timezonefinder = ">=8.3.0,<9"
+yagmail = ">=0.16.0,<0.17"
+jupyterlab = ">=4.6.3,<5"
+jupyter-collaboration = ">=5.0.2,<6"
+pytest = ">=9.1.1,<10"
+pytest-cov = ">=7.1.0,<8"
+ruff = ">=0.16.5,<0.17"
+pre-commit = ">=4.6.2,<5"

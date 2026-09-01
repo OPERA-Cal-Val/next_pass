@@ -6,8 +6,9 @@ import sys
 import types
 from pathlib import Path
 
-import next_pass
 from tests.helpers import FakePoint, FakePolygon
+
+import next_pass
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,13 +46,13 @@ tmpdir = Path({str(tmp_path)!r})
 runpy.run_path(str(root / "tests" / "conftest.py"), run_name="__cli_stubs__")
 
 import next_pass
-import utils.cloudiness as cloudiness
-import utils.landsat_pass as landsat_pass
-import utils.nisar_pass as nisar_pass
-import utils.opera_products as opera_products
-import utils.plot_maps as plot_maps
-import utils.sentinel_pass as sentinel_pass
-import utils.utils as utils_mod
+import next_pass.cloudiness as cloudiness
+import next_pass.landsat_pass as landsat_pass
+import next_pass.nisar_pass as nisar_pass
+import next_pass.opera_products as opera_products
+import next_pass.plot_maps as plot_maps
+import next_pass.sentinel_pass as sentinel_pass
+import next_pass.utils as utils_mod
 from tests.helpers import FakePoint, FakePolygon
 
 
@@ -213,11 +214,11 @@ def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
         next_pass.time, "sleep", lambda seconds: sleep_calls.append(seconds)
     )
 
-    import utils.cloudiness as cloudiness
-    import utils.landsat_pass as landsat_pass
-    import utils.nisar_pass as nisar_pass
-    import utils.sentinel_pass as sentinel_pass
-    import utils.utils as utils_mod
+    import next_pass.cloudiness as cloudiness
+    import next_pass.landsat_pass as landsat_pass
+    import next_pass.nisar_pass as nisar_pass
+    import next_pass.sentinel_pass as sentinel_pass
+    import next_pass.utils as utils_mod
 
     monkeypatch.setattr(cloudiness, "api_limit_reached", lambda: False)
     monkeypatch.setattr(utils_mod, "bbox_type", lambda bbox: ("parsed", bbox))
@@ -233,10 +234,10 @@ def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
     monkeypatch.setattr(
         sentinel_pass,
         "next_sentinel_pass",
-        lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False, **kwargs: sentinel_calls.append(
-            (sat, geometry.name, n_day_past, pred_cloudiness)
-        )
-        or {"next_collect_info": sat},
+        lambda sat, geometry, n_day_past, pred_cloudiness, pred_tide=False, **kwargs: (
+            sentinel_calls.append((sat, geometry.name, n_day_past, pred_cloudiness))
+            or {"next_collect_info": sat}
+        ),
     )
     monkeypatch.setattr(
         nisar_pass,
@@ -272,8 +273,8 @@ def test_find_next_overpass_routes_all_satellites(monkeypatch, tmp_path):
 
 
 def test_find_next_overpass_routes_single_satellite(monkeypatch, tmp_path):
-    import utils.landsat_pass as landsat_pass
-    import utils.utils as utils_mod
+    import next_pass.landsat_pass as landsat_pass
+    import next_pass.utils as utils_mod
 
     monkeypatch.setattr(utils_mod, "bbox_type", lambda bbox: bbox)
     monkeypatch.setattr(
@@ -326,8 +327,8 @@ def test_main_runs_requested_outputs_and_email(monkeypatch, tmp_path):
     monkeypatch.setattr(next_pass, "datetime", FakeDateTime)
     monkeypatch.chdir(tmp_path)
 
-    import utils.opera_products as opera_products
-    import utils.plot_maps as plot_maps
+    import next_pass.opera_products as opera_products
+    import next_pass.plot_maps as plot_maps
 
     monkeypatch.setattr(
         next_pass,

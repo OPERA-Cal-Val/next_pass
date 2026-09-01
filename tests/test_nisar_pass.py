@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-import utils.nisar_pass as nisar_pass
 from tests.helpers import FakeFrame, FakePolygon
+
+import next_pass.nisar_pass as nisar_pass
 
 
 def test_parse_nisar_description_extracts_products_and_attributes():
@@ -21,7 +22,7 @@ def test_parse_nisar_description_extracts_products_and_attributes():
     products, attrs = nisar_pass.parse_nisar_description(html)
 
     assert attrs == {"track": "145", "frame": "17", "passDirection": "Ascending"}
-    assert products[0][0] == datetime(2026, 3, 20, tzinfo=timezone.utc)
+    assert products[0][0] == datetime(2026, 3, 20, tzinfo=UTC)
     assert products[1][1] == "S_75"
 
 
@@ -87,7 +88,7 @@ def test_next_nisar_pass_handles_read_failures(monkeypatch):
 
 
 def test_next_nisar_pass_returns_no_collect_message(monkeypatch):
-    end_date = datetime.now(timezone.utc) + timedelta(days=4)
+    end_date = datetime.now(UTC) + timedelta(days=4)
     monkeypatch.setattr(
         nisar_pass, "create_nisar_collection_plan", lambda: "nisar.geojson"
     )
@@ -117,7 +118,7 @@ def test_next_nisar_pass_returns_no_collect_message(monkeypatch):
 
 
 def test_next_nisar_pass_groups_by_best_overlap(monkeypatch):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     rows = FakeFrame(
         [
             {
@@ -178,7 +179,7 @@ def test_estimate_nisar_overpass_time_western_descending_rolls_forward_one_day()
         "2026-06-28", 34.0, -118.0, "Descending"
     )
 
-    assert result.tzinfo == timezone.utc
+    assert result.tzinfo == UTC
     assert result.date().isoformat() == "2026-06-29"
     assert result.hour == 1
     assert result.minute == 52
@@ -195,7 +196,7 @@ def test_estimate_nisar_overpass_time_eastern_ascending_rolls_back_one_day():
         "2026-06-28", 35.0, 140.0, "Ascending"
     )
 
-    assert result.tzinfo == timezone.utc
+    assert result.tzinfo == UTC
     assert result.date().isoformat() == "2026-06-27"
     assert result.hour == 20
     assert result.minute == 40
@@ -207,7 +208,7 @@ def test_estimate_nisar_overpass_time_prime_meridian_no_rollover():
         "2026-06-28", 0.0, 0.0, "Ascending"
     )
 
-    assert result.tzinfo == timezone.utc
+    assert result.tzinfo == UTC
     assert result.date().isoformat() == "2026-06-28"
     assert result.hour == 6
     assert result.minute == 0
@@ -221,7 +222,7 @@ def test_estimate_nisar_overpass_time_dateline_descending_double_rollover():
         "2026-06-28", -18.0, -175.0, "Descending"
     )
 
-    assert result.tzinfo == timezone.utc
+    assert result.tzinfo == UTC
     assert result.date().isoformat() == "2026-06-29"
     assert result.hour == 5
     assert result.minute == 40

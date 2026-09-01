@@ -9,7 +9,7 @@ This test verifies that the timezone validation enhancement works correctly:
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from io import StringIO
 
 from shapely.geometry import Point
@@ -26,7 +26,7 @@ logger.addHandler(handler)
 logger.setLevel(logging.WARNING)
 
 # Import after setting up logging  # noqa: E402
-from utils.tide_prediction import make_get_tide_for_row  # noqa: E402
+from next_pass.tide_prediction import make_get_tide_for_row  # noqa: E402
 
 
 def test_utc_datetime():
@@ -38,7 +38,7 @@ def test_utc_datetime():
     # Create a mock row with UTC datetime (dict-like access)
     class MockRow:
         def __init__(self):
-            dt = datetime(2026, 6, 28, 18, 0, 0, tzinfo=timezone.utc)
+            dt = datetime(2026, 6, 28, 18, 0, 0, tzinfo=UTC)
             self._data = {"begin_date": dt}
 
         def __getitem__(self, key):
@@ -55,9 +55,9 @@ def test_utc_datetime():
         pass  # Expected to fail with no stations
 
     warnings = log_stream.getvalue()
-    assert (
-        "timezone" not in warnings.lower() and "naive" not in warnings.lower()
-    ), f"Unexpected warning: {warnings}"
+    assert "timezone" not in warnings.lower() and "naive" not in warnings.lower(), (
+        f"Unexpected warning: {warnings}"
+    )
     print("  ✅ PASS: No timezone warnings")
 
 
@@ -87,9 +87,9 @@ def test_non_utc_datetime():
         pass  # Expected to fail with no stations
 
     warnings = log_stream.getvalue()
-    assert (
-        "Non-UTC datetime detected" in warnings
-    ), f"Expected warning not found. Got: {warnings}"
+    assert "Non-UTC datetime detected" in warnings, (
+        f"Expected warning not found. Got: {warnings}"
+    )
     print(f"  ✅ PASS: Got expected warning: {warnings.strip()}")
 
 
@@ -118,9 +118,9 @@ def test_naive_datetime():
         pass  # Expected to fail with no stations
 
     warnings = log_stream.getvalue()
-    assert (
-        "Naive datetime detected" in warnings
-    ), f"Expected warning not found. Got: {warnings}"
+    assert "Naive datetime detected" in warnings, (
+        f"Expected warning not found. Got: {warnings}"
+    )
     print(f"  ✅ PASS: Got expected warning: {warnings.strip()}")
 
 
@@ -136,7 +136,7 @@ def test_datetime_list():
             pst = timezone(timedelta(hours=-8))
             self._data = {
                 "begin_date": [
-                    datetime(2026, 6, 28, 18, 0, 0, tzinfo=timezone.utc),
+                    datetime(2026, 6, 28, 18, 0, 0, tzinfo=UTC),
                     datetime(2026, 6, 29, 10, 0, 0, tzinfo=pst),
                     datetime(2026, 6, 30, 18, 0, 0),  # Naive
                 ]

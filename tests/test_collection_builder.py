@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import utils.collection_builder as collection_builder
 from tests.helpers import FakeFrame, FakePolygon
+
+import next_pass.collection_builder as collection_builder
 
 
 def _make_logger():
@@ -165,8 +166,8 @@ def test_build_sentinel_collection_uses_cached_and_parsed_files(monkeypatch, tmp
     cached_geojson = tmp_path / "sentinel1_alpha.geojson"
     cached_geojson.write_text("{}", encoding="utf-8")
 
-    old_date = datetime.now(timezone.utc) - timedelta(days=40)
-    new_date = datetime.now(timezone.utc) - timedelta(days=2)
+    old_date = datetime.now(UTC) - timedelta(days=40)
+    new_date = datetime.now(UTC) - timedelta(days=2)
     cached_frame = FakeFrame(
         [{"begin_date": old_date, "geometry": FakePolygon("cached")}]
     )
@@ -242,7 +243,7 @@ def test_build_sentinel_collection_reports_partial_parse_failure(monkeypatch, tm
     kml_ok.write_text("ok", encoding="utf-8")
     kml_bad.write_text("bad", encoding="utf-8")
 
-    new_date = datetime.now(timezone.utc) - timedelta(days=2)
+    new_date = datetime.now(UTC) - timedelta(days=2)
     parsed_frame = FakeFrame(
         [{"begin_date": new_date, "geometry": FakePolygon("fresh")}]
     )
@@ -297,7 +298,7 @@ def test_build_sentinel_collection_survives_unexpected_parse_worker_error(
     kml_ok.write_text("ok", encoding="utf-8")
     kml_boom.write_text("boom", encoding="utf-8")
 
-    new_date = datetime.now(timezone.utc) - timedelta(days=2)
+    new_date = datetime.now(UTC) - timedelta(days=2)
     parsed_frame = FakeFrame(
         [{"begin_date": new_date, "geometry": FakePolygon("fresh")}]
     )

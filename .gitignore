@@ -178,3 +178,20 @@ cython_debug/
 
 # Claude documentation
 claude_md/
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+# pixi
+.pixi/*
+!.pixi/config.toml
+
+# next_pass runtime outputs
+scratch/
+site/
+nextpass_outputs_*/
+upcoming_passes.parquet
+upcoming_passes.meta.json
+
+# Claude
+claude/

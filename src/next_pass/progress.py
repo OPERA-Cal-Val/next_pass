@@ -1,7 +1,7 @@
 import logging
 import sys
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Callable, Generator, Optional
 
 from rich.console import Console
 from rich.logging import RichHandler
@@ -72,7 +72,7 @@ def overpass_progress(
 class ProgressController:
     """Owns the master task and hands out per-satellite sub-tasks."""
 
-    def __init__(self, progress: Optional[Progress], master_task: Optional[TaskID]):
+    def __init__(self, progress: Progress | None, master_task: TaskID | None):
         self._progress = progress
         self._master = master_task
 

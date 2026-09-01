@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import UTC
 
 import pytest
-
-import utils.utils as utils_mod
 from tests.helpers import FakeGeometry
+
+import next_pass.utils as utils_mod
 
 
 def test_bbox_type_accepts_point_and_bbox():
@@ -279,9 +280,9 @@ def test_get_spatial_extent_km_uses_projected_bounds(monkeypatch):
 
 def test_filter_dates_beyond_window_with_datetime_objects():
     """Test filtering with datetime objects (NISAR-style)."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     dates = [
         now + timedelta(days=10),
         now + timedelta(days=30),
@@ -331,9 +332,9 @@ def test_filter_dates_beyond_window_with_date_strings():
 
 def test_filter_dates_beyond_window_all_within_window():
     """Test when all dates are within the window."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     dates = [
         now + timedelta(days=10),
         now + timedelta(days=20),
@@ -355,9 +356,9 @@ def test_filter_dates_beyond_window_all_within_window():
 
 def test_filter_dates_beyond_window_all_beyond_window():
     """Test when all dates are beyond the window."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     dates = [
         now + timedelta(days=70),
         now + timedelta(days=80),
@@ -392,9 +393,9 @@ def test_filter_dates_beyond_window_empty_lists():
 
 def test_filter_dates_beyond_window_mismatched_tide_data():
     """Test when tide data is shorter than dates list."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     dates = [
         now + timedelta(days=10),
         now + timedelta(days=20),
@@ -414,9 +415,9 @@ def test_filter_dates_beyond_window_mismatched_tide_data():
 
 def test_filter_dates_beyond_window_custom_max_days():
     """Test with custom max_days parameter."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     dates = [
         now + timedelta(days=5),
         now + timedelta(days=15),

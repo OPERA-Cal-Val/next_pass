@@ -3,9 +3,9 @@ import json
 import logging
 import random
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import folium
 import geopandas as gpd
@@ -15,7 +15,7 @@ from jinja2 import Template
 from matplotlib.colors import to_hex
 from shapely.geometry import Polygon
 
-from utils.utils import (
+from next_pass.utils import (
     bbox_to_geometry,
     bbox_type,
     check_opera_overpass_intersection,
@@ -47,7 +47,7 @@ def spread_rgb_colors(n: int) -> list[str]:
         r = (i * step) % 256
         g = ((i + 1) * step) % 256
         b = ((i + 2) * step) % 256
-        hex_color = "#{:02x}{:02x}{:02x}".format(r, g, b)
+        hex_color = f"#{r:02x}{g:02x}{b:02x}"
         colors.append(hex_color)
     return colors
 
@@ -60,17 +60,13 @@ def hsl_distinct_colors_improved(num_colors: int) -> list[str]:
         saturation = random.randint(60, 80)
         lightness = random.randint(30, 50)
         r, g, b = colorsys.hls_to_rgb(hue / 360, lightness / 100, saturation / 100)
-        hex_color = "#{:02x}{:02x}{:02x}".format(
-            int(r * 255),
-            int(g * 255),
-            int(b * 255),
-        )
+        hex_color = f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
         colors.append(hex_color)
     return colors
 
 
 def make_opera_granule_map(
-    results_dict: Dict[str, Dict[str, Any]],
+    results_dict: dict[str, dict[str, Any]],
     bbox: Any,
     timestamp_dir: Path,
 ):
@@ -152,8 +148,8 @@ def make_opera_granule_map(
         for _, row in gdf.iterrows():
             centroid = row.geometry.centroid
             popup_html = f"""
-                <b>{row['GranuleUR']}</b><br>
-                <a href="{row['URL']}" target="_blank">
+                <b>{row["GranuleUR"]}</b><br>
+                <a href="{row["URL"]}" target="_blank">
                     Download Granule
                 </a>
             """
@@ -217,7 +213,7 @@ def make_opera_granule_map(
 
 def make_opera_granule_drcs_map(
     event_date: datetime,
-    results_dict: Dict[str, Dict[str, Any]],
+    results_dict: dict[str, dict[str, Any]],
     result_s1: dict | None,
     result_s2: dict | None,
     result_l: dict | None,
@@ -284,14 +280,12 @@ def make_opera_granule_drcs_map(
                     aqu_date = datetime.strptime(parts[7], "%Y%m%dT%H%M%SZ")
                 else:
                     aqu_date = datetime.strptime(parts[4], "%Y%m%dT%H%M%SZ")
-                aqu_date_utc = aqu_date.replace(tzinfo=timezone.utc)
+                aqu_date_utc = aqu_date.replace(tzinfo=UTC)
             except Exception as e:
                 LOGGER.info("Unexpected error while parsing UMM/label: %s", e)
                 download_url = "URL not available"
                 label = "OPERA Granule"
-                aqu_date_utc = event_date - timezone.utc.utcoffset(
-                    event_date
-                )  # force pre-event
+                aqu_date_utc = event_date - UTC.utcoffset(event_date)  # force pre-event
 
             geom = gdf.iloc[idx].geometry
             centroid = geom.centroid

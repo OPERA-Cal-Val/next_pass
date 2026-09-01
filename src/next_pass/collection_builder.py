@@ -1,15 +1,15 @@
 import logging
 import os
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Callable, List, Optional
 
 import geopandas as gpd
 import pandas as pd
 import requests
 
-from utils.utils import download_kml, parse_kml
+from next_pass.utils import download_kml, parse_kml
 
 SCRATCH_DIR = Path.cwd() / "scratch"
 
@@ -59,12 +59,12 @@ def resolve_platform(kml_path: Path, platform_by_name: dict[str, str]) -> str | 
 
 
 def sync_scratch_directory(
-    urls: List[str],
+    urls: list[str],
     mission_name: str,
     scratch_dir: Path,
     logger: logging.Logger,
-    step_cb: Optional[Callable[[str], None]] = None,
-) -> List[Path]:
+    step_cb: Callable[[str], None] | None = None,
+) -> list[Path]:
     """
     Synchronize local scratch directory with online ESA URLs.
 
@@ -154,7 +154,7 @@ def sync_scratch_directory(
             logger.error("%d of %d files failed to download.", len(failed), total)
 
     # Return local paths in original url order, skipping failed downloads
-    local_kml_paths: List[Path] = [
+    local_kml_paths: list[Path] = [
         file_path for _, file_path in url_paths if file_path not in failed
     ]
 
@@ -162,13 +162,13 @@ def sync_scratch_directory(
 
 
 def build_sentinel_collection(
-    urls: List[str],
+    urls: list[str],
     n_day_past: float,
     mission_name: str,
     out_filename: str,
     logger: logging.Logger,
     platforms: list | None = None,
-    step_cb: Optional[Callable[[str], None]] = None,
+    step_cb: Callable[[str], None] | None = None,
 ) -> Path:
     """
     Download, parse, and merge Sentinel acquisition plans into a GeoJSON file.
@@ -268,7 +268,7 @@ def build_sentinel_collection(
         logger.error("No valid GeoDataFrames created.")
         return Path()
 
-    n_days_earlier = datetime.now(timezone.utc) - timedelta(days=n_day_past)
+    n_days_earlier = datetime.now(UTC) - timedelta(days=n_day_past)
 
     full_gdf = pd.concat(gdfs).drop_duplicates()
     full_gdf["begin_date"] = pd.to_datetime(full_gdf["begin_date"], utc=True)

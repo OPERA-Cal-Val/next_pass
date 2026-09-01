@@ -6,8 +6,7 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Union
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import rasterio
@@ -32,12 +31,12 @@ def chunks(seq, size):
         yield seq[i : i + size]
 
 
-def as_utc_datetime(dt_like: Union[str, datetime]) -> datetime:
+def as_utc_datetime(dt_like: str | datetime) -> datetime:
     """Normalize string/datetime input to a timezone-aware UTC datetime."""
     dt = parse_datetime(dt_like) if isinstance(dt_like, str) else dt_like
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 class RateLimiter:
@@ -106,10 +105,10 @@ def get_cloudiness(url):
         return None
 
 
-def generate_random_sample_points(polygon: Polygon, n: int = 10) -> List[Point]:
+def generate_random_sample_points(polygon: Polygon, n: int = 10) -> list[Point]:
     """Generate random sample points within a polygon."""
     minx, miny, maxx, maxy = polygon.bounds
-    points: List[Point] = []
+    points: list[Point] = []
     attempts = 0
     max_attempts = n * 10  # avoid infinite loop if polygon is small
 
@@ -124,7 +123,7 @@ def generate_random_sample_points(polygon: Polygon, n: int = 10) -> List[Point]:
     return points
 
 
-def generate_grid_sample_points(polygon: Polygon, num_points: int = 10) -> List[Point]:
+def generate_grid_sample_points(polygon: Polygon, num_points: int = 10) -> list[Point]:
     """
     Generate approximately `num_points' evenly spaced points within a polygon
     """
@@ -138,7 +137,7 @@ def generate_grid_sample_points(polygon: Polygon, num_points: int = 10) -> List[
     x_coords = np.arange(minx, maxx, grid_spacing)
     y_coords = np.arange(miny, maxy, grid_spacing)
 
-    points: List[Point] = []
+    points: list[Point] = []
     for x in x_coords:
         for y in y_coords:
             p = Point(x, y)
@@ -154,7 +153,7 @@ def get_cloudiness_at_point(
     target_iso: str,
     allow_nearest: bool = False,
     session: requests.Session = SESSION,
-) -> Optional[float]:
+) -> float | None:
     """
     Get cloudiness forecast at a single point and time.
 
@@ -218,7 +217,7 @@ def get_cloudiness_at_points(
     target_iso: str,
     allow_nearest: bool = False,
     session: requests.Session = SESSION,
-) -> list[Optional[float]]:
+) -> list[float | None]:
     """
     Same logic as get_cloudiness_at_point, but for multiple points
     (instead of just one) at a given time using a single Open-Meteo API call.
@@ -253,9 +252,8 @@ def get_cloudiness_at_points(
             # to be safe we consider single point possibilty
             hourlies = [data.get("hourly", {})]
 
-        results: list[Optional[float]] = []
+        results: list[float | None] = []
         for hourly in hourlies:  # loop over each point's data
-
             times = hourly.get("time", [])
             clouds = hourly.get("cloudcover", [])
 
@@ -310,7 +308,7 @@ def get_historical_cloudiness_at_point(
     target_iso: str,
     allow_nearest: bool = False,
     session: requests.Session = SESSION,
-) -> Optional[float]:
+) -> float | None:
     """
     Get historical cloudiness at a single point and time.
 
@@ -378,7 +376,7 @@ def get_historical_cloudiness_at_points(
     target_iso: str,
     allow_nearest: bool = False,
     session: requests.Session = SESSION,
-) -> list[Optional[float]]:
+) -> list[float | None]:
     """
     Get historical cloudiness for multiple points at a given time
     using a single Open-Meteo archive API call.
@@ -415,7 +413,7 @@ def get_historical_cloudiness_at_points(
         else:
             hourlies = [data.get("hourly", {})]
 
-        results: list[Optional[float]] = []
+        results: list[float | None] = []
         for hourly in hourlies:  # loop over each point's data
             times = hourly.get("time", [])
             clouds = hourly.get("cloudcover", [])
@@ -461,12 +459,12 @@ def get_historical_cloudiness_at_points(
 
 
 def get_overpass_cloudiness(
-    polygon_geojson: Dict,
-    target_datetime: Union[str, datetime],
+    polygon_geojson: dict,
+    target_datetime: str | datetime,
     num_samples: int = 10,
     allow_nearest: bool = False,
     sampling_method: str = "random",  # "random" or "grid"
-) -> Optional[float]:
+) -> float | None:
     """
     Get forecasted or historical average cloudiness over a polygon area,
     depending on if the date is in the past or in the future.
@@ -506,15 +504,15 @@ def get_overpass_cloudiness(
             return None
 
         global hit_api_limit
-        cloudiness_values: List[float] = []
+        cloudiness_values: list[float] = []
 
-        is_future = target_dt_utc > datetime.now(timezone.utc)
+        is_future = target_dt_utc > datetime.now(UTC)
         batch_func = (
             get_cloudiness_at_points
             if is_future
             else get_historical_cloudiness_at_points
         )
-        cloudiness_values: List[float] = []
+        cloudiness_values: list[float] = []
         max_workers = 4  # Limit to 4 to avoid API rate limits
         BATCH_SIZE = 20  # Number of points per batch
         rate_limiter = RateLimiter(rate_per_sec=3)  # max 3 requests/sec
@@ -579,10 +577,10 @@ def make_get_cloudiness_for_row(aoi_polygon: Polygon):
         timestamps = (
             row.begin_date if isinstance(row.begin_date, list) else [row.begin_date]
         )
-        cloudiness_vals: List[Optional[float]] = []
+        cloudiness_vals: list[float | None] = []
 
         for timestamp in timestamps:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             four_days_later = now + timedelta(days=4)
             fourteen_days_later = now + timedelta(days=14)
 

@@ -1,7 +1,7 @@
 import earthaccess
 import pytest
 
-from utils.opera_products import fetch_hls_granule_links
+from next_pass.opera_products import fetch_hls_granule_links
 
 
 @pytest.mark.integration

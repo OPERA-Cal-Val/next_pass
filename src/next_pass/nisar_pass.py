@@ -2,7 +2,7 @@ import logging
 import re
 import xml.etree.ElementTree as ET
 import zipfile
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 
 import geopandas as gpd
@@ -12,8 +12,8 @@ from bs4 import BeautifulSoup
 from shapely.geometry import Polygon
 from tabulate import tabulate
 
-from utils.tide_prediction import get_stations_in_aoi, get_tide_info_batch
-from utils.utils import (
+from next_pass.tide_prediction import get_stations_in_aoi, get_tide_info_batch
+from next_pass.utils import (
     HOURS_PER_LONGITUDE_DEGREE,
     NISAR_ASCENDING_CROSSING_HOUR,
     NISAR_DESCENDING_CROSSING_HOUR,
@@ -90,7 +90,7 @@ def estimate_nisar_overpass_time(
     local_solar_offset_hours = lon / HOURS_PER_LONGITUDE_DEGREE
     utc_hour = local_solar_hour - local_solar_offset_hours
 
-    base = datetime.combine(date_obj, time.min, tzinfo=timezone.utc)
+    base = datetime.combine(date_obj, time.min, tzinfo=UTC)
     return base + timedelta(hours=utc_hour)
 
 
@@ -129,7 +129,7 @@ def parse_nisar_description(
             timestamp = datetime.combine(
                 datetime.strptime(first, "%Y-%m-%d").date(),
                 time.min,
-                tzinfo=timezone.utc,
+                tzinfo=UTC,
             )
             products.append((timestamp, second))
             continue
@@ -250,7 +250,7 @@ def format_collects(gdf: gpd.GeoDataFrame) -> str:
             direction_with_time = f"{row.pass_direction} (~{first_time} UTC ±20-40 min)"
             formatted_dates = [
                 stamp.strftime("%Y-%m-%d")
-                + (" (P)" if stamp < datetime.now(timezone.utc) else "")
+                + (" (P)" if stamp < datetime.now(UTC) else "")
                 for stamp in dates
             ]
             date_lines = [
@@ -316,7 +316,7 @@ def build_collect_summaries(gdf: gpd.GeoDataFrame) -> list[str]:
             first_time = dates[0].strftime("%H:%M")
             formatted_dates = [
                 stamp.strftime("%Y-%m-%d")
-                + (" (P)" if stamp < datetime.now(timezone.utc) else "")
+                + (" (P)" if stamp < datetime.now(UTC) else "")
                 for stamp in dates
             ]
             date_display = ", ".join(formatted_dates)
@@ -392,7 +392,7 @@ def next_nisar_pass(
         if not collection_path:
             raise OSError("NISAR collection could not be created.")
         gdf = gpd.read_file(collection_path)
-    except (IOError, OSError, requests.RequestException, zipfile.BadZipFile) as error:
+    except (OSError, requests.RequestException, zipfile.BadZipFile) as error:
         LOGGER.error("Error reading NISAR plan file: %s", error)
         return {
             "next_collect_info": "Error reading NISAR plan file.",
@@ -405,7 +405,7 @@ def next_nisar_pass(
     gdf["begin_date"] = pd.to_datetime(gdf["begin_date"], utc=True, errors="coerce")
     gdf["end_date"] = pd.to_datetime(gdf["end_date"], utc=True, errors="coerce")
     gdf = gdf.dropna(subset=["begin_date", "geometry"]).reset_index(drop=True)
-    n_days_earlier = datetime.now(timezone.utc) - timedelta(days=n_day_past)
+    n_days_earlier = datetime.now(UTC) - timedelta(days=n_day_past)
     gdf = gdf.loc[gdf["begin_date"] >= n_days_earlier].reset_index(drop=True)
 
     if step_cb:
@@ -523,8 +523,8 @@ def next_nisar_pass(
                 for t in dates:
                     if isinstance(t, datetime):
                         # Normalize to naive UTC string
-                        if t.tzinfo is not None and t.tzinfo != timezone.utc:
-                            t = t.astimezone(timezone.utc)
+                        if t.tzinfo is not None and t.tzinfo != UTC:
+                            t = t.astimezone(UTC)
                         row_isos.append(t.strftime("%Y-%m-%dT%H:%M:%S"))
                     else:
                         row_isos.append(t)
@@ -551,7 +551,10 @@ def next_nisar_pass(
             # Filter dates within each row to only those within 2 months from now
             def filter_dates_and_tides(row):
                 """Keep only dates and corresponding tides within 2 months."""
-                nonlocal future_passes_count, future_passes_min_date, future_passes_max_date
+                nonlocal \
+                    future_passes_count, \
+                    future_passes_min_date, \
+                    future_passes_max_date
 
                 dates = (
                     row["begin_date"]

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-import utils.opera_products as opera_products
 from tests.helpers import FakeFrame, FakePolygon
+
+import next_pass.opera_products as opera_products
 
 
 def test_describe_cloud_cover_thresholds():
@@ -31,15 +31,15 @@ def test_find_print_available_opera_products_prefixes_products_and_trims_dates(
     rows = FakeFrame(
         [
             {
-                "BeginningDateTime": datetime(2026, 3, 20, 10, tzinfo=timezone.utc),
+                "BeginningDateTime": datetime(2026, 3, 20, 10, tzinfo=UTC),
                 "geometry": FakePolygon("g1"),
             },
             {
-                "BeginningDateTime": datetime(2026, 3, 20, 12, tzinfo=timezone.utc),
+                "BeginningDateTime": datetime(2026, 3, 20, 12, tzinfo=UTC),
                 "geometry": FakePolygon("g2"),
             },
             {
-                "BeginningDateTime": datetime(2026, 3, 18, 8, tzinfo=timezone.utc),
+                "BeginningDateTime": datetime(2026, 3, 18, 8, tzinfo=UTC),
                 "geometry": FakePolygon("g3"),
             },
         ]
@@ -124,7 +124,7 @@ def test_export_opera_products_writes_workbook_and_skips_cloudiness_when_disable
         assert payload[1][5] == "https://example.com/file_B01_WTR.tif"
 
 
-@patch("utils.opera_products.earthaccess.search_data")
+@patch("next_pass.opera_products.earthaccess.search_data")
 def test_fetch_hls_granule_links(mock_search):
     # Setup mock successful response
     mock_result = MagicMock()
@@ -144,7 +144,7 @@ def test_fetch_hls_granule_links(mock_search):
     assert error_links is None
 
 
-@patch("utils.opera_products.fetch_hls_granule_links")
+@patch("next_pass.opera_products.fetch_hls_granule_links")
 def test_export_hls_band_mapping_and_input_granules(mock_fetch_links, tmp_path):
     # Simulate an S30 and L30 response with their specific band names
     mock_fetch_links.side_effect = [
@@ -204,7 +204,7 @@ def test_export_hls_band_mapping_and_input_granules(mock_fetch_links, tmp_path):
     assert ws.cell(row=3, column=21).value == "https://fake/B05.tif"  # NIR for Landsat
 
 
-@patch("utils.opera_products.earthaccess.search_data")
+@patch("next_pass.opera_products.earthaccess.search_data")
 def test_export_hls_fallback_cmr_search(mock_cmr_search, tmp_path):
     # Setup mock geometry and mock CMR response
     mock_geom = MagicMock()

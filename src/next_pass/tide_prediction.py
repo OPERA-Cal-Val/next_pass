@@ -31,16 +31,15 @@ import logging
 import math
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 import requests
 from shapely.geometry import Point
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points
 
-from utils.utils import TIDE_PREDICTION_WINDOW_DAYS
+from next_pass.utils import TIDE_PREDICTION_WINDOW_DAYS
 
 LOGGER = logging.getLogger("tide_prediction")
 
@@ -81,7 +80,7 @@ def cache_stations(filepath: str | Path | None = None):
 
 def load_stations(filepath: str | Path | None = None):
     cache_path = resolve_station_cache_path(filepath)
-    with open(cache_path, "r", encoding="utf-8") as f:
+    with open(cache_path, encoding="utf-8") as f:
         data = json.load(f)
     return data.get("stations", [])
 
@@ -330,7 +329,7 @@ def get_tide_info_batch(
     target_isos: list,
     station_dicts: list,
     allow_interpolation: bool = True,
-    session: Optional[requests.Session] = None,
+    session: requests.Session | None = None,
 ) -> list:
     """Return a dict per target time with 'nearest' (table) and 'per_station' (map) values.
 
@@ -357,8 +356,9 @@ def get_tide_info_batch(
         centroid = polygon.centroid
         nearest_id = min(
             station_dicts,
-            key=lambda st: (st["lat"] - centroid.y) ** 2
-            + (st["lng"] - centroid.x) ** 2,
+            key=lambda st: (
+                (st["lat"] - centroid.y) ** 2 + (st["lng"] - centroid.x) ** 2
+            ),
         )["id"]
 
         target_dts = [parse_datetime(t) for t in target_isos]
@@ -499,7 +499,6 @@ def make_get_tide_for_row(aoi_geometry, station_dicts):
     """
 
     def get_tide_for_row(row):
-        from datetime import timezone
 
         times = row["begin_date"]
 
@@ -511,12 +510,12 @@ def make_get_tide_for_row(aoi_geometry, station_dicts):
             if isinstance(t, datetime):
                 # Ensure datetime is in UTC before converting to naive string
                 # This prevents silent errors if a non-UTC datetime somehow enters the system
-                if t.tzinfo is not None and t.tzinfo != timezone.utc:
+                if t.tzinfo is not None and t.tzinfo != UTC:
                     LOGGER.warning(
                         "Non-UTC datetime detected (%s), converting to UTC for tide prediction",
                         t.tzinfo,
                     )
-                    t = t.astimezone(timezone.utc)
+                    t = t.astimezone(UTC)
                 elif t.tzinfo is None:
                     LOGGER.warning(
                         "Naive datetime detected (no timezone), assuming UTC for tide prediction"
