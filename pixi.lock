@@ -26709,7 +26709,7 @@ packages:
   - openpyxl>=3.1.5
   - pyarrow
   - rasterio
-  - rich>=13.0.0
+  - rich>=15.0.0
   - tabulate
   - timezonefinder
   - yagmail
