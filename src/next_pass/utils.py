@@ -93,9 +93,13 @@ def scrape_esa_download_urls(url: str, class_: str, max_attempts: int = 3) -> li
     hrefs = [a["href"] for a in div.find_all("a", href=True)]
     clean_hrefs = []
     for href in hrefs:
-        if href.startswith("https://sentinel/"):
-            # Fix malformed domain
-            href = href.replace("https://sentinel", "")
+        parsed = urlparse(href)
+        if parsed.scheme and "." not in parsed.netloc:
+            # ESA sometimes emits host-less links, e.g. https://sentinel/... or
+            # https://documents/d/sentinel/...; "documents" is a path segment.
+            prefix = "/documents" if parsed.netloc == "documents" else ""
+            query = f"?{parsed.query}" if parsed.query else ""
+            href = f"{prefix}{parsed.path}{query}"
         clean_hrefs.append(urljoin("https://sentinels.copernicus.eu", href))
 
     return clean_hrefs

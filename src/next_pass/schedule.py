@@ -40,6 +40,9 @@ SCHEDULE_COLUMNS = [
     "geometry",
 ]
 ALL_SENSORS = ["sentinel-1", "sentinel-2", "landsat", "nisar"]
+# Past passes feed the viewer's OPERA readiness timeline; NISAR has no OPERA
+# products there yet and is ~60% of the file, so it stays forward-only.
+HISTORY_SENSORS = ["sentinel-1", "sentinel-2", "landsat"]
 WRS2_PAGE_SIZE = 2000
 LANDSAT_SIMPLIFY_DEG = 0.01
 SCHEDULE_CACHE_PATTERNS = (
@@ -71,22 +74,30 @@ def clear_schedule_cache(scratch: Path) -> None:
                 cache_path.unlink()
 
 
-def _window(days: int) -> tuple[datetime, datetime]:
-    start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-    return start, start + timedelta(days=days)
+def _today() -> datetime:
+    return datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def build_sentinel_schedule(sensor: str, days: int) -> gpd.GeoDataFrame:
+def _window(days: int, days_back: int = 0) -> tuple[datetime, datetime]:
+    today = _today()
+    return today - timedelta(days=days_back), today + timedelta(days=days)
+
+
+def build_sentinel_schedule(
+    sensor: str, days: int, days_back: int = 0
+) -> gpd.GeoDataFrame:
     builders = {
         "sentinel-1": create_s1_collection_plan,
         "sentinel-2": create_s2_collection_plan,
     }
-    collection_path = builders[sensor](n_day_past=0)
+    # The collection builder trims relative to "now", not midnight; +1 keeps
+    # the whole first lookback day before _window() trims it exactly.
+    collection_path = builders[sensor](n_day_past=days_back + 1 if days_back else 0)
     gdf = gpd.read_file(collection_path)
     if gdf.empty:
         return _empty_schedule()
 
-    start, end = _window(days)
+    start, end = _window(days, days_back)
     begin = pd.to_datetime(gdf["begin_date"], utc=True, format="mixed")
     finish = pd.to_datetime(gdf["end_date"], utc=True, format="mixed")
     keep = (begin >= start) & (begin < end)
@@ -192,6 +203,7 @@ def build_landsat_schedule(
     days: int,
     session: requests.Session | None = None,
     wrs2: gpd.GeoDataFrame | None = None,
+    days_back: int = 0,
 ) -> gpd.GeoDataFrame:
     session = session or requests.Session()
     schedule_source = load_landsat_schedule_source(session)
@@ -206,10 +218,10 @@ def build_landsat_schedule(
         return empty
 
     wrs2 = wrs2 if wrs2 is not None else fetch_wrs2_outlines(session)
-    start, _ = _window(days)
+    start, _ = _window(days, days_back)
 
     frames = []
-    for offset in range(days):
+    for offset in range(days_back + days):
         day = (start + timedelta(days=offset)).date()
         cycle = _cycle_for_date(day, schedule_source.cycle_sequence)
         for mission in LANDSAT_MISSIONS:
@@ -255,22 +267,24 @@ def _landsat_swath_row(
     }
 
 
-def build_schedule(sensors: list[str], days: int) -> gpd.GeoDataFrame:
+def build_schedule(
+    sensors: list[str], days: int, days_back: int = 0
+) -> gpd.GeoDataFrame:
     parts = []
     source_status = {}
     if "sentinel-1" in sensors:
         LOGGER.info("Building Sentinel-1 schedule...")
-        part = build_sentinel_schedule("sentinel-1", days)
+        part = build_sentinel_schedule("sentinel-1", days, days_back)
         parts.append(part)
         source_status["sentinel-1"] = part.attrs.get("source_status", "ok")
     if "sentinel-2" in sensors:
         LOGGER.info("Building Sentinel-2 schedule...")
-        part = build_sentinel_schedule("sentinel-2", days)
+        part = build_sentinel_schedule("sentinel-2", days, days_back)
         parts.append(part)
         source_status["sentinel-2"] = part.attrs.get("source_status", "ok")
     if "landsat" in sensors:
         LOGGER.info("Building Landsat schedule...")
-        part = build_landsat_schedule(days)
+        part = build_landsat_schedule(days, days_back=days_back)
         parts.append(part)
         source_status["landsat"] = part.attrs.get("source_status", "ok")
     if "nisar" in sensors:
@@ -289,13 +303,20 @@ def build_schedule(sensors: list[str], days: int) -> gpd.GeoDataFrame:
     return schedule
 
 
-def write_schedule(gdf: gpd.GeoDataFrame, output: Path, days: int) -> Path:
+def write_schedule(
+    gdf: gpd.GeoDataFrame, output: Path, days: int, days_back: int = 0
+) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     gdf.to_parquet(output, index=False)
     sensor_counts = gdf["sensor"].value_counts().to_dict() if len(gdf) else {}
+    today = _today()
     meta = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "days": days,
+        "days_back": days_back,
+        "window_today": today.isoformat(),
+        "history_start": (today - timedelta(days=days_back)).isoformat(),
+        "history_sensors": HISTORY_SENSORS if days_back else [],
         "n_passes": int(len(gdf)),
         "sensors": {k: int(v) for k, v in sensor_counts.items()},
         "sources": gdf.attrs.get("source_status", {}),
@@ -321,6 +342,15 @@ def create_parser() -> argparse.ArgumentParser:
         type=int,
         default=7,
         help="Number of days ahead to include (default: 7).",
+    )
+    parser.add_argument(
+        "--days-back",
+        type=int,
+        default=0,
+        help=(
+            "Number of past days to include for Sentinel-1, Sentinel-2 and "
+            "Landsat (default: 0). Used by the viewer's DRCS readiness timeline."
+        ),
     )
     parser.add_argument(
         "-s",
@@ -356,8 +386,11 @@ def main(cli_args: list[str] | None = None) -> Path:
         LOGGER.info("Clearing schedule-owned files from %s for a fresh build.", scratch)
         clear_schedule_cache(scratch)
 
-    gdf = build_schedule(args.sensors, args.days)
-    output = write_schedule(gdf, args.output, args.days)
+    if args.days < 1 or args.days_back < 0:
+        raise SystemExit("--days must be >= 1 and --days-back must be >= 0.")
+
+    gdf = build_schedule(args.sensors, args.days, args.days_back)
+    output = write_schedule(gdf, args.output, args.days, args.days_back)
     LOGGER.info("Wrote %s passes to %s", len(gdf), output)
     return output
 

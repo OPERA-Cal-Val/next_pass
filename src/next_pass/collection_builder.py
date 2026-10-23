@@ -118,6 +118,7 @@ def sync_scratch_directory(
 
     # Download missing files concurrently (network-bound)
     failed: set = set()
+    missing_upstream: set = set()
     if to_download:
 
         def _download(item):
@@ -125,6 +126,19 @@ def sync_scratch_directory(
             try:
                 download_kml(url, str(file_path))
                 return None
+            except requests.HTTPError as e:
+                if e.response is not None and e.response.status_code == 404:
+                    # ESA's page sometimes links a plan before (or without) the
+                    # file being published; nothing we can do but skip it.
+                    logger.warning(
+                        "ESA lists %s but the file is not on its server (404); "
+                        "skipping it.",
+                        url,
+                    )
+                    missing_upstream.add(file_path)
+                else:
+                    logger.error("Failed to download %s: %s", url, e)
+                return file_path
             except (requests.RequestException, OSError) as e:
                 logger.error("Failed to download %s: %s", url, e)
                 return file_path
@@ -150,8 +164,9 @@ def sync_scratch_directory(
                 if step_cb:
                     step_cb(f"Downloading {completed}/{total} files")
 
-        if failed:
-            logger.error("%d of %d files failed to download.", len(failed), total)
+        errored = failed - missing_upstream
+        if errored:
+            logger.error("%d of %d files failed to download.", len(errored), total)
 
     # Return local paths in original url order, skipping failed downloads
     local_kml_paths: list[Path] = [
