@@ -1,12 +1,12 @@
 import json
 import logging
-import os
 import random
 import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import rasterio
@@ -24,6 +24,8 @@ SESSION.headers.update({"User-Agent": "cloudiness-client/1.0"})
 
 adapter = HTTPAdapter(pool_connections=4, pool_maxsize=4)
 SESSION.mount("https://", adapter)
+
+CLOUD_RASTER_TIMEOUT = (10, 120)
 
 
 def chunks(seq, size):
@@ -67,9 +69,16 @@ def get_cloudiness(url):
     cloud_values = {4, 5, 6, 7, 12, 13, 14, 15}
     exclude_values = {255}
 
+    tmp_path: Path | None = None
+    response = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp:
-            response = requests.get(url, stream=True)
+            tmp_path = Path(tmp.name)
+            response = requests.get(
+                url,
+                stream=True,
+                timeout=CLOUD_RASTER_TIMEOUT,
+            )
             if response.status_code != 200:
                 LOGGER.warning(
                     "Failed to download %s (status %s)", url, response.status_code
@@ -78,12 +87,9 @@ def get_cloudiness(url):
 
             for chunk in response.iter_content(chunk_size=8192):
                 tmp.write(chunk)
-            tmp_path = tmp.name
 
         with rasterio.open(tmp_path) as src:
             band = src.read(1)
-
-        os.remove(tmp_path)
 
         # Create mask of valid pixels (exclude 255, 8)
         valid_mask = ~np.isin(band, list(exclude_values))
@@ -103,6 +109,11 @@ def get_cloudiness(url):
     except Exception as e:  # noqa: BLE001
         LOGGER.error("Error processing %s: %s", url, e)
         return None
+    finally:
+        if response is not None:
+            response.close()
+        if tmp_path is not None:
+            tmp_path.unlink(missing_ok=True)
 
 
 def generate_random_sample_points(polygon: Polygon, n: int = 10) -> list[Point]:
