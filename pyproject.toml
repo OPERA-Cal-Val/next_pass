@@ -161,8 +161,9 @@ py312 = { features = ["py312"], solve-group = "py312" }
 lint = { features = ["lint"], no-default-feature = true }
 
 [tool.pixi.tasks]
-test = "pytest tests"
-cov = "pytest tests --cov=next_pass --cov-report=term-missing"
+test = "pytest tests -m 'not integration'"
+test-integration = "pytest tests -m integration"
+cov = "pytest tests -m 'not integration' --cov=next_pass --cov-report=term-missing"
 schedule = "next-pass-schedule"
 viewer = "next-pass-viewer"
 lab = "jupyter lab"
