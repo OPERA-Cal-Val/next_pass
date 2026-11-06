@@ -356,18 +356,35 @@ function decodeWKB(bytes) {
   let pos = 0;
   function geom() {
     const little = view.getUint8(pos) === 1; pos += 1;
-    let type = view.getUint32(pos, little); pos += 4;
-    type = type & 0xff;
+    const rawType = view.getUint32(pos, little); pos += 4;
+    let type = rawType & 0x0fffffff;
+    let hasZ = Boolean(rawType & 0x80000000);
+    let hasM = Boolean(rawType & 0x40000000);
+    const hasSrid = Boolean(rawType & 0x20000000);
+    if (type >= 3000) { type -= 3000; hasZ = true; hasM = true; }
+    else if (type >= 2000) { type -= 2000; hasM = true; }
+    else if (type >= 1000) { type -= 1000; hasZ = true; }
     const f64 = () => { const v = view.getFloat64(pos, little); pos += 8; return v; };
     const u32 = () => { const v = view.getUint32(pos, little); pos += 4; return v; };
-    if (type === 1) return { type: "Point", coordinates: [f64(), f64()] };
+    if (hasSrid) u32();
+    const coordinate = () => {
+      const xy = [f64(), f64()];
+      if (hasZ) f64();
+      if (hasM) f64();
+      return xy;
+    };
+    if (type === 1) return { type: "Point", coordinates: coordinate() };
     if (type === 3) {
       const rings = Array.from({ length: u32() }, () =>
-        Array.from({ length: u32() }, () => [f64(), f64()]));
+        Array.from({ length: u32() }, coordinate));
       return { type: "Polygon", coordinates: rings };
     }
     if (type === 6) {
-      const polys = Array.from({ length: u32() }, () => geom().coordinates);
+      const polys = Array.from({ length: u32() }, () => {
+        const polygon = geom();
+        if (polygon.type !== "Polygon") throw new Error("MultiPolygon contains a non-polygon geometry");
+        return polygon.coordinates;
+      });
       return { type: "MultiPolygon", coordinates: polys };
     }
     throw new Error(`Unsupported WKB geometry type ${type}`);
