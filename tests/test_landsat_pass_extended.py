@@ -289,3 +289,17 @@ def test_estimate_landsat_overpass_time_midpacific_boundary():
     assert result.date().isoformat() == "2026-06-27"
     assert result.hour == 23
     assert result.minute == 52
+
+
+def test_estimate_landsat_overpass_time_uses_ascending_node():
+    result = landsat_pass.estimate_landsat_overpass_time(
+        "06/28/2026",
+        0.0,
+        0.0,
+        pass_direction="ascending",
+    )
+
+    assert result.tzinfo == UTC
+    assert result.date().isoformat() == "2026-06-28"
+    assert result.hour == 22
+    assert result.minute == 12

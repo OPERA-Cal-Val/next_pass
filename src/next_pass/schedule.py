@@ -211,7 +211,10 @@ def _landsat_swath_row(
     geometry = group.geometry.union_all().simplify(LANDSAT_SIMPLIFY_DEG)
     centroid = geometry.centroid
     overpass = estimate_landsat_overpass_time(
-        day.strftime(DATE_FORMAT), centroid.y, centroid.x
+        day.strftime(DATE_FORMAT),
+        centroid.y,
+        centroid.x,
+        pass_direction=direction,
     )
     return {
         "sensor": mission.replace("_", "-"),
