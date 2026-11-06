@@ -181,7 +181,9 @@ def build_landsat_schedule(
             "(warnings: %s)",
             schedule_source.warnings,
         )
-        return _empty_schedule()
+        empty = _empty_schedule()
+        empty.attrs["source_status"] = "failed"
+        return empty
 
     wrs2 = wrs2 if wrs2 is not None else fetch_wrs2_outlines(session)
     start, _ = _window(days)
@@ -201,8 +203,12 @@ def build_landsat_schedule(
             )
 
     if not frames:
-        return _empty_schedule()
-    return gpd.GeoDataFrame(frames, crs="EPSG:4326")
+        empty = _empty_schedule()
+        empty.attrs["source_status"] = "ok"
+        return empty
+    schedule = gpd.GeoDataFrame(frames, crs="EPSG:4326")
+    schedule.attrs["source_status"] = "ok"
+    return schedule
 
 
 def _landsat_swath_row(
@@ -211,7 +217,10 @@ def _landsat_swath_row(
     geometry = group.geometry.union_all().simplify(LANDSAT_SIMPLIFY_DEG)
     centroid = geometry.centroid
     overpass = estimate_landsat_overpass_time(
-        day.strftime(DATE_FORMAT), centroid.y, centroid.x
+        day.strftime(DATE_FORMAT),
+        centroid.y,
+        centroid.x,
+        pass_direction=direction,
     )
     return {
         "sensor": mission.replace("_", "-"),
@@ -228,25 +237,36 @@ def _landsat_swath_row(
 
 def build_schedule(sensors: list[str], days: int) -> gpd.GeoDataFrame:
     parts = []
+    source_status = {}
     if "sentinel-1" in sensors:
         LOGGER.info("Building Sentinel-1 schedule...")
-        parts.append(build_sentinel_schedule("sentinel-1", days))
+        part = build_sentinel_schedule("sentinel-1", days)
+        parts.append(part)
+        source_status["sentinel-1"] = part.attrs.get("source_status", "ok")
     if "sentinel-2" in sensors:
         LOGGER.info("Building Sentinel-2 schedule...")
-        parts.append(build_sentinel_schedule("sentinel-2", days))
+        part = build_sentinel_schedule("sentinel-2", days)
+        parts.append(part)
+        source_status["sentinel-2"] = part.attrs.get("source_status", "ok")
     if "landsat" in sensors:
         LOGGER.info("Building Landsat schedule...")
-        parts.append(build_landsat_schedule(days))
+        part = build_landsat_schedule(days)
+        parts.append(part)
+        source_status["landsat"] = part.attrs.get("source_status", "ok")
     if "nisar" in sensors:
         LOGGER.info("Building NISAR schedule...")
-        parts.append(build_nisar_schedule(days))
+        part = build_nisar_schedule(days)
+        parts.append(part)
+        source_status["nisar"] = part.attrs.get("source_status", "ok")
 
     combined = pd.concat(parts, ignore_index=True) if parts else _empty_schedule()
     combined["begin_time"] = pd.to_datetime(combined["begin_time"], utc=True)
     combined["end_time"] = pd.to_datetime(combined["end_time"], utc=True)
-    return gpd.GeoDataFrame(combined, geometry="geometry", crs="EPSG:4326").sort_values(
-        "begin_time", ignore_index=True
-    )
+    schedule = gpd.GeoDataFrame(
+        combined, geometry="geometry", crs="EPSG:4326"
+    ).sort_values("begin_time", ignore_index=True)
+    schedule.attrs["source_status"] = source_status
+    return schedule
 
 
 def write_schedule(gdf: gpd.GeoDataFrame, output: Path, days: int) -> Path:
@@ -258,6 +278,7 @@ def write_schedule(gdf: gpd.GeoDataFrame, output: Path, days: int) -> Path:
         "days": days,
         "n_passes": int(len(gdf)),
         "sensors": {k: int(v) for k, v in sensor_counts.items()},
+        "sources": gdf.attrs.get("source_status", {}),
     }
     output.with_suffix(".meta.json").write_text(json.dumps(meta, indent=2))
     return output

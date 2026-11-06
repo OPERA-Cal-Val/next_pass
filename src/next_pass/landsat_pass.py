@@ -13,6 +13,7 @@ from tabulate import tabulate
 from next_pass.tide_prediction import get_stations_in_aoi, get_tide_info_batch
 from next_pass.utils import (
     HOURS_PER_LONGITUDE_DEGREE,
+    LANDSAT_ASCENDING_CROSSING_HOUR,
     LANDSAT_EQUATORIAL_CROSSING_HOUR,
     TIDE_PREDICTION_WINDOW_DAYS,
     arcgis_to_polygon,
@@ -42,7 +43,12 @@ MAX_SCHEDULE_SEARCH_DAYS = 365
 UNIX_EPOCH = date(1970, 1, 1)
 
 
-def estimate_landsat_overpass_time(date_str: str, lat: float, lon: float) -> datetime:
+def estimate_landsat_overpass_time(
+    date_str: str,
+    lat: float,
+    lon: float,
+    pass_direction: str = "descending",
+) -> datetime:
     """
     Estimate Landsat overpass time based on USGS orbital specifications.
 
@@ -54,6 +60,7 @@ def estimate_landsat_overpass_time(date_str: str, lat: float, lon: float) -> dat
         date_str: Date in format MM/DD/YYYY (e.g., "06/28/2026")
         lat: Latitude of the location
         lon: Longitude of the location (negative for Western hemisphere)
+        pass_direction: WRS-2 orbit direction (ascending or descending)
 
     Returns:
         datetime: Estimated overpass time in UTC timezone
@@ -76,8 +83,17 @@ def estimate_landsat_overpass_time(date_str: str, lat: float, lon: float) -> dat
     # Parse the calendar date (MM/DD/YYYY format)
     date_obj = datetime.strptime(date_str, DATE_FORMAT).date()
 
-    # Landsat crosses the equator at 10:12 AM local solar time
-    local_solar_hour = LANDSAT_EQUATORIAL_CROSSING_HOUR
+    direction = pass_direction.lower()
+    if direction == "ascending":
+        local_solar_hour = LANDSAT_ASCENDING_CROSSING_HOUR
+    elif direction == "descending":
+        local_solar_hour = LANDSAT_EQUATORIAL_CROSSING_HOUR
+    else:
+        logger.warning(
+            "Unknown Landsat pass direction %r; assuming descending",
+            pass_direction,
+        )
+        local_solar_hour = LANDSAT_EQUATORIAL_CROSSING_HOUR
 
     # Local Solar Time (LST) approximation:
     # LST ≈ UTC + (longitude / HOURS_PER_LONGITUDE_DEGREE) hours
@@ -191,6 +207,14 @@ def _build_mission_cycle_paths(
                 for entry in entries
                 if isinstance(entry, dict) and "path" in entry
             }
+
+    if not any(
+        paths
+        for cycle_paths in mission_cycle_paths.values()
+        for paths in cycle_paths.values()
+    ):
+        msg = "Landsat cycle path/row data contains no usable paths."
+        raise ValueError(msg)
 
     return mission_cycle_paths
 
@@ -576,7 +600,12 @@ def next_landsat_pass(
                 for key, data in aggregated_data.items():
                     if data["dates"]:
                         estimated_datetimes = [
-                            estimate_landsat_overpass_time(date_str, lat, lon)
+                            estimate_landsat_overpass_time(
+                                date_str,
+                                lat,
+                                lon,
+                                pass_direction=key[0],
+                            )
                             for date_str in data["dates"]
                         ]
                         # Convert to naive ISO strings (timezone stripped intentionally)
@@ -677,7 +706,12 @@ def next_landsat_pass(
             if data["dates"]:
                 # Estimate time from first date (time is same for all passes at this location)
                 first_date = data["dates"][0]
-                estimated_dt = estimate_landsat_overpass_time(first_date, lat, lon)
+                estimated_dt = estimate_landsat_overpass_time(
+                    first_date,
+                    lat,
+                    lon,
+                    pass_direction=direction,
+                )
                 estimated_time_str = f" at ~{estimated_dt.strftime('%H:%M')} UTC"
                 if not header_time_str:
                     header_time_str = estimated_time_str
