@@ -1,40 +1,7 @@
-import sys
-import types
 import unittest
 from datetime import date
 
-
-def _install_test_stubs() -> None:
-    """Stub optional GIS imports so schedule tests can run in a lean env."""
-    shapely_module = types.ModuleType("shapely")
-    shapely_geometry_module = types.ModuleType("shapely.geometry")
-    shapely_geometry_base_module = types.ModuleType("shapely.geometry.base")
-    shapely_ops_module = types.ModuleType("shapely.ops")
-    tabulate_module = types.ModuleType("tabulate")
-
-    class _DummyGeometry:
-        pass
-
-    shapely_geometry_module.Point = _DummyGeometry
-    shapely_geometry_module.Polygon = _DummyGeometry
-    shapely_geometry_base_module.BaseGeometry = _DummyGeometry
-    shapely_ops_module.unary_union = lambda geometries: geometries
-    tabulate_module.tabulate = lambda *args, **kwargs: ""
-
-    utils_utils_module = types.ModuleType("next_pass.utils")
-    utils_utils_module.arcgis_to_polygon = lambda geometry: geometry
-
-    sys.modules.setdefault("shapely", shapely_module)
-    sys.modules.setdefault("shapely.geometry", shapely_geometry_module)
-    sys.modules.setdefault("shapely.geometry.base", shapely_geometry_base_module)
-    sys.modules.setdefault("shapely.ops", shapely_ops_module)
-    sys.modules.setdefault("tabulate", tabulate_module)
-    sys.modules.setdefault("next_pass.utils", utils_utils_module)
-
-
-_install_test_stubs()
-
-from next_pass.landsat_pass import (  # noqa: E402
+from next_pass.landsat_pass import (
     LandsatScheduleSource,
     find_next_landsat_pass,
 )
