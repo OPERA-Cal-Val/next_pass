@@ -8,11 +8,13 @@ import next_pass.cloudiness as cloudiness
 
 
 class FakeResponse:
-    def __init__(self, payload, status_code=200, text=""):
+    def __init__(self, payload, status_code=200, text="", content=b""):
         self._payload = payload
         self.status_code = status_code
         self.text = text
         self.headers = {}
+        self.content = content
+        self.closed = False
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -22,6 +24,54 @@ class FakeResponse:
 
     def json(self):
         return self._payload
+
+    def iter_content(self, chunk_size):
+        del chunk_size
+        yield self.content
+
+    def close(self):
+        self.closed = True
+
+
+def test_get_cloudiness_cleans_temp_file_on_http_error(monkeypatch, tmp_path):
+    original_named_temporary_file = cloudiness.tempfile.NamedTemporaryFile
+    response = FakeResponse({}, status_code=503)
+    captured = {}
+
+    def make_temp_file(*args, **kwargs):
+        return original_named_temporary_file(*args, dir=tmp_path, **kwargs)
+
+    def get(url, **kwargs):
+        captured.update(url=url, **kwargs)
+        return response
+
+    monkeypatch.setattr(cloudiness.tempfile, "NamedTemporaryFile", make_temp_file)
+    monkeypatch.setattr(cloudiness.requests, "get", get)
+
+    assert cloudiness.get_cloudiness("https://example.test/cloud.tif") is None
+    assert captured["timeout"] == cloudiness.CLOUD_RASTER_TIMEOUT
+    assert response.closed is True
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_get_cloudiness_cleans_temp_file_on_raster_error(monkeypatch, tmp_path):
+    original_named_temporary_file = cloudiness.tempfile.NamedTemporaryFile
+    response = FakeResponse({}, content=b"not-a-raster")
+
+    def make_temp_file(*args, **kwargs):
+        return original_named_temporary_file(*args, dir=tmp_path, **kwargs)
+
+    monkeypatch.setattr(cloudiness.tempfile, "NamedTemporaryFile", make_temp_file)
+    monkeypatch.setattr(cloudiness.requests, "get", lambda *args, **kwargs: response)
+    monkeypatch.setattr(
+        cloudiness.rasterio,
+        "open",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("bad raster")),
+    )
+
+    assert cloudiness.get_cloudiness("https://example.test/cloud.tif") is None
+    assert response.closed is True
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_as_utc_datetime_normalizes_naive_and_aware_values():
