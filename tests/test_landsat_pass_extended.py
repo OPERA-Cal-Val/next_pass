@@ -38,6 +38,9 @@ def test_build_cycle_sequence_and_path_mapping_validate_inputs():
     with pytest.raises(KeyError):
         landsat_pass._build_cycle_sequence({"landsat_8": {"1/1/1970": {"cycle": 99}}})
 
+    with pytest.raises(ValueError, match="contains no usable paths"):
+        landsat_pass._build_mission_cycle_paths({"landsat_8": {}, "landsat_9": {}})
+
 
 def test_load_landsat_schedule_source_prefers_modern(monkeypatch):
     payloads = [

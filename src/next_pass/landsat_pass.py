@@ -208,6 +208,14 @@ def _build_mission_cycle_paths(
                 if isinstance(entry, dict) and "path" in entry
             }
 
+    if not any(
+        paths
+        for cycle_paths in mission_cycle_paths.values()
+        for paths in cycle_paths.values()
+    ):
+        msg = "Landsat cycle path/row data contains no usable paths."
+        raise ValueError(msg)
+
     return mission_cycle_paths
 
 
