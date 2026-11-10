@@ -199,6 +199,10 @@ def _install_shapely_stub() -> None:
     shapely_ops_module.unary_union = lambda geometries: (
         geometries[0] if geometries else None
     )
+    shapely_ops_module.nearest_points = lambda geometry, station: (
+        getattr(geometry, "centroid", geometry),
+        station,
+    )
 
     sys.modules["shapely"] = shapely_module
     sys.modules["shapely.geometry"] = shapely_geometry_module

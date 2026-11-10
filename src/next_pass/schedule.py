@@ -1,7 +1,6 @@
 import argparse
 import json
 import logging
-import shutil
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -43,12 +42,33 @@ SCHEDULE_COLUMNS = [
 ALL_SENSORS = ["sentinel-1", "sentinel-2", "landsat", "nisar"]
 WRS2_PAGE_SIZE = 2000
 LANDSAT_SIMPLIFY_DEG = 0.01
+SCHEDULE_CACHE_PATTERNS = (
+    "sentinel1_*.kml",
+    "sentinel1_*.geojson",
+    "sentinel2_*.kml",
+    "sentinel2_*.geojson",
+    "sentinel_1_collection.geojson",
+    "sentinel_2_collection.geojson",
+    "nisar_observation_plan.kmz",
+    "nisar_collection.geojson",
+)
 
 
 def _empty_schedule() -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame(
         {col: [] for col in SCHEDULE_COLUMNS}, geometry="geometry", crs="EPSG:4326"
     )
+
+
+def clear_schedule_cache(scratch: Path) -> None:
+    """Remove only cache files owned by schedule builders."""
+    if not scratch.exists():
+        return
+
+    for pattern in SCHEDULE_CACHE_PATTERNS:
+        for cache_path in scratch.glob(pattern):
+            if cache_path.is_file():
+                cache_path.unlink()
 
 
 def _window(days: int) -> tuple[datetime, datetime]:
@@ -333,8 +353,8 @@ def main(cli_args: list[str] | None = None) -> Path:
 
     scratch = Path.cwd() / "scratch"
     if not args.no_refresh and scratch.exists():
-        LOGGER.info("Clearing %s for a fresh build.", scratch)
-        shutil.rmtree(scratch)
+        LOGGER.info("Clearing schedule-owned files from %s for a fresh build.", scratch)
+        clear_schedule_cache(scratch)
 
     gdf = build_schedule(args.sensors, args.days)
     output = write_schedule(gdf, args.output, args.days)

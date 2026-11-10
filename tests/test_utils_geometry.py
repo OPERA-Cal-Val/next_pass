@@ -178,13 +178,22 @@ def test_scrape_esa_download_urls_normalizes_malformed_links(monkeypatch):
         def raise_for_status(self):
             return None
 
-    monkeypatch.setattr(utils_mod.requests, "get", lambda url: FakeResponse())
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse()
+
+    monkeypatch.setattr(utils_mod.requests, "get", get)
 
     urls = utils_mod.scrape_esa_download_urls("https://example.com", "sentinel-1a")
 
     assert urls == [
         "https://sentinels.copernicus.eu/path-1.kml",
         "https://sentinels.copernicus.eu/path-2.kml",
+    ]
+    assert calls == [
+        ("https://example.com", {"timeout": utils_mod.ESA_REQUEST_TIMEOUT})
     ]
 
 
@@ -204,7 +213,7 @@ def test_scrape_esa_download_urls_retries_on_429_then_succeeds(monkeypatch):
             return None
 
     responses = iter([RateLimitedResponse(), OkResponse()])
-    monkeypatch.setattr(utils_mod.requests, "get", lambda url: next(responses))
+    monkeypatch.setattr(utils_mod.requests, "get", lambda url, timeout: next(responses))
 
     sleeps = []
     monkeypatch.setattr(utils_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
@@ -224,7 +233,9 @@ def test_scrape_esa_download_urls_gives_up_after_max_attempts_on_429(monkeypatch
         def raise_for_status(self):
             raise requests.exceptions.HTTPError(response=self)
 
-    monkeypatch.setattr(utils_mod.requests, "get", lambda url: RateLimitedResponse())
+    monkeypatch.setattr(
+        utils_mod.requests, "get", lambda url, timeout: RateLimitedResponse()
+    )
     monkeypatch.setattr(utils_mod.time, "sleep", lambda seconds: None)
 
     with pytest.raises(requests.exceptions.HTTPError):
@@ -240,7 +251,9 @@ def test_scrape_esa_download_urls_does_not_retry_non_429_errors(monkeypatch):
         def raise_for_status(self):
             raise requests.exceptions.HTTPError(response=self)
 
-    monkeypatch.setattr(utils_mod.requests, "get", lambda url: ServerErrorResponse())
+    monkeypatch.setattr(
+        utils_mod.requests, "get", lambda url, timeout: ServerErrorResponse()
+    )
     sleeps = []
     monkeypatch.setattr(utils_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
 
@@ -248,6 +261,31 @@ def test_scrape_esa_download_urls_does_not_retry_non_429_errors(monkeypatch):
         utils_mod.scrape_esa_download_urls("https://example.com", "sentinel-1a")
 
     assert sleeps == []
+
+
+def test_download_kml_uses_timeout(monkeypatch, tmp_path):
+    calls = []
+
+    class FakeResponse:
+        content = b"<kml />"
+
+        def raise_for_status(self):
+            return None
+
+    def get(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse()
+
+    monkeypatch.setattr(utils_mod.requests, "get", get)
+
+    output = utils_mod.download_kml(
+        "https://example.com/plan.kml", str(tmp_path / "plan.kml")
+    )
+
+    assert output.read_bytes() == b"<kml />"
+    assert calls == [
+        ("https://example.com/plan.kml", {"timeout": utils_mod.ESA_REQUEST_TIMEOUT})
+    ]
 
 
 def test_get_spatial_extent_km_uses_projected_bounds(monkeypatch):

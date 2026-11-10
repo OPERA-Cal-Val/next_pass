@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import geopandas as gpd
 import pandas as pd
@@ -115,12 +116,24 @@ def download_nisar_plan(url: str, output_path: Path) -> Path:
         return output_path
 
     LOGGER.info("Downloading NISAR observation plan from NASA...")
+    temp_path: Path | None = None
     with requests.get(url, stream=True, timeout=120) as response:
         response.raise_for_status()
-        with open(output_path, "wb") as file_obj:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    file_obj.write(chunk)
+        try:
+            with NamedTemporaryFile(
+                dir=output_path.parent,
+                prefix=f".{output_path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as file_obj:
+                temp_path = Path(file_obj.name)
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        file_obj.write(chunk)
+            temp_path.replace(output_path)
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
     return output_path
 
 

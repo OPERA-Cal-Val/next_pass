@@ -44,6 +44,7 @@ HOURS_PER_LONGITUDE_DEGREE = 15.0
 
 # NOAA tide prediction only supports forecasts up to ~60 days in the future for Landsat and NISAR to improve output readability
 TIDE_PREDICTION_WINDOW_DAYS = 60
+ESA_REQUEST_TIMEOUT = (10, 60)
 
 
 class Tee:
@@ -71,7 +72,7 @@ def scrape_esa_download_urls(url: str, class_: str, max_attempts: int = 3) -> li
     """
     for attempt in range(1, max_attempts + 1):
         try:
-            response = requests.get(url)
+            response = requests.get(url, timeout=ESA_REQUEST_TIMEOUT)
             response.raise_for_status()
             break
         except requests.exceptions.HTTPError as e:
@@ -111,7 +112,7 @@ def is_existing_path(s: str) -> bool:
 
 def download_kml(url: str, out_path: str = "collection.kml") -> Path:
     """Download a KML file from a URL."""
-    response = requests.get(url)
+    response = requests.get(url, timeout=ESA_REQUEST_TIMEOUT)
     response.raise_for_status()
     path = Path(out_path)
     path.write_bytes(response.content)

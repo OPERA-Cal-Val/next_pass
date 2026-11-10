@@ -29,6 +29,55 @@ def test_filter_grouped_rows_preserves_empty_dataframe():
     assert isinstance(result, pd.DataFrame)
     assert result.empty
     assert list(result.columns) == ["track"]
+class DownloadResponse:
+    def __init__(self, chunks):
+        self.chunks = chunks
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def raise_for_status(self):
+        return None
+
+    def iter_content(self, chunk_size):
+        assert chunk_size == 1024 * 1024
+        yield from self.chunks
+
+
+def test_download_nisar_plan_publishes_completed_download(monkeypatch, tmp_path):
+    output = tmp_path / "plan.kmz"
+    response = DownloadResponse([b"complete", b"-plan"])
+    monkeypatch.setattr(nisar_pass.requests, "get", lambda *args, **kwargs: response)
+
+    result = nisar_pass.download_nisar_plan("https://example.test/plan.kmz", output)
+
+    assert result == output
+    assert output.read_bytes() == b"complete-plan"
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_download_nisar_plan_removes_partial_download(monkeypatch, tmp_path):
+    output = tmp_path / "plan.kmz"
+
+    def chunks():
+        yield b"partial"
+        raise nisar_pass.requests.ConnectionError("connection lost")
+
+    response = DownloadResponse(chunks())
+    monkeypatch.setattr(nisar_pass.requests, "get", lambda *args, **kwargs: response)
+
+    try:
+        nisar_pass.download_nisar_plan("https://example.test/plan.kmz", output)
+    except nisar_pass.requests.ConnectionError:
+        pass
+    else:
+        raise AssertionError("interrupted download should propagate")
+
+    assert not output.exists()
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_parse_nisar_description_extracts_products_and_attributes():
