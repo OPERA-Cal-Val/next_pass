@@ -29,6 +29,8 @@ def test_filter_grouped_rows_preserves_empty_dataframe():
     assert isinstance(result, pd.DataFrame)
     assert result.empty
     assert list(result.columns) == ["track"]
+
+
 class DownloadResponse:
     def __init__(self, chunks):
         self.chunks = chunks
