@@ -79,6 +79,31 @@ def test_sync_scratch_directory_reports_partial_download_failure(monkeypatch, tm
     assert steps == ["Downloading 1/2 files", "Downloading 2/2 files"]
 
 
+def test_sync_scratch_directory_warns_on_upstream_404(monkeypatch, tmp_path):
+    import requests
+
+    logger, messages = _make_logger()
+
+    def fake_download(url, path):
+        if "gone" in url:
+            response = requests.Response()
+            response.status_code = 404
+            raise requests.HTTPError("404 Not Found", response=response)
+
+    monkeypatch.setattr(collection_builder, "download_kml", fake_download)
+
+    local_paths = collection_builder.sync_scratch_directory(
+        ["https://example.com/ok.kml", "https://example.com/gone.kml"],
+        "sentinel2",
+        tmp_path,
+        logger,
+    )
+
+    assert local_paths == [tmp_path / "sentinel2_ok.kml"]
+    assert messages["error"] == []
+    assert any("not on its server (404)" in msg for msg in messages["warning"])
+
+
 def test_sync_scratch_directory_survives_unexpected_worker_error(monkeypatch, tmp_path):
     """A worker error outside the narrowed (RequestException, OSError) tuple
     must not abort the rest of the batch (thread-pool retrieval safety net)."""

@@ -191,7 +191,7 @@ button:disabled { opacity: 0.45; cursor: default; border-color: var(--hairline);
 .matches-head button { padding: 3px 10px; font-size: 12.5px; }
 button.active { border-color: var(--ink-2); background: var(--surface); font-weight: 600; }
 #status { color: var(--ink-2); font-size: 12.5px; }
-#results { flex: 1; overflow-y: auto; padding: 6px 8px; }
+#results { flex: 1 0 280px; overflow-y: auto; padding: 6px 8px; }
 .pass {
   display: flex;
   flex-wrap: wrap;
@@ -233,8 +233,20 @@ button.active { border-color: var(--ink-2); background: var(--surface); font-wei
   padding: 10px 8px 2px;
 }
 .note { color: var(--muted); font-size: 12px; margin-top: 6px; }
-#aoi-msg { color: var(--ink-2); }
-#aoi-msg.err { color: var(--err); }
+#aoi-msg, #drcs-msg { color: var(--ink-2); }
+#aoi-msg.err, #drcs-msg.err { color: var(--err); }
+#drcs-products { margin-top: 8px; }
+#drcs .matches-head { margin-bottom: 8px; }
+#drcs.collapsed .matches-head { margin-bottom: 0; }
+#drcs.collapsed #drcs-body { display: none; }
+.drcs-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+.drcs-row .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.drcs-row .eta { flex-basis: 100%; margin-left: 40px; color: var(--muted); font-size: 12px; }
+.drcs-row .eta.err { color: var(--err); }
+.drcs-pop { font: 12.5px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.drcs-pop b { word-break: break-all; }
+.drcs-pop ul { margin: 4px 0; padding-left: 16px; }
+.drcs-pop .dim { color: #6b6a66; }
 #empty { padding: 24px 16px; color: var(--ink-2); }
 @media (prefers-color-scheme: dark) {
   .leaflet-tile {
@@ -292,9 +304,25 @@ button.active { border-color: var(--ink-2); background: var(--surface); font-wei
       <div id="aoi-msg" class="note" role="status" hidden></div>
       <div class="note">Draw on the map, upload a GeoJSON, KML/KMZ, or zipped Shapefile, or type coordinates in the same order as <code>next-pass -b</code>. Matching passes appear below. Times marked (est.) are local-solar-time estimates: roughly ±40 min for NISAR frames, and up to ±1–2 h for Landsat path swaths. For exact times over your AOI, run the <code>next-pass</code> CLI.</div>
     </section>
+    <section id="drcs" class="collapsed">
+      <div class="matches-head">
+        <h2>DRCS map · OPERA products</h2>
+        <button type="button" id="drcs-toggle" aria-expanded="false" aria-controls="drcs-body">Show</button>
+      </div>
+      <div id="drcs-body">
+      <form id="drcs-form" class="coords">
+        <input type="datetime-local" id="drcs-event" step="60" aria-label="Event date and time (UTC)">
+        <button type="submit" id="drcs-run" disabled title="Set an area of interest first">Run</button>
+        <button type="button" id="drcs-clear" hidden>Clear</button>
+      </form>
+      <div id="drcs-msg" class="note" role="status" hidden></div>
+      <div id="drcs-products"></div>
+      <div class="note">Event date and time in UTC, as in <code>next-pass -g</code>. Searches NASA CMR for OPERA products over the AOI. Colored footprints already have a product acquired after the event; gray ones only have pre-event products. Click one to see the post-event passes that will refresh it and when the product is expected.</div>
+      </div>
+    </section>
     <section class="matches-head">
       <h2>Matches <span id="status"></span></h2>
-      <button id="copy-link" disabled title="Copy a link that reopens this search (area, sensors, dates)">Copy link</button>
+      <button id="copy-link" disabled title="Copy a link that reopens this search (area, sensors, dates, DRCS event)">Copy link</button>
     </section>
     <div id="results"><div id="empty">Set an area of interest to see which sensors will pass over it.</div></div>
   </div>
@@ -405,8 +433,10 @@ const state = {
   chartRows: [],
   start: null,
   end: null,
+  dataMin: null,
   dataStart: null,
   dataEnd: null,
+  historyStart: null,
   selected: null,
   ready: false,
 };
@@ -439,18 +469,23 @@ async function load() {
   const lo = new Date(Math.min(...times));
   const hi = new Date(Math.max(...times));
   const iso = (d) => d.toISOString().slice(0, 10);
+  // Past passes are in the file for the DRCS timeline; the pass list still opens on today.
+  const today = iso(new Date());
   const startInput = document.getElementById("date-start");
   const endInput = document.getElementById("date-end");
   startInput.min = endInput.min = iso(lo);
   startInput.max = endInput.max = iso(hi);
-  startInput.value = iso(lo);
+  startInput.value = today > iso(lo) && today <= iso(hi) ? today : iso(lo);
   endInput.value = iso(hi);
+  state.dataMin = iso(lo);
   state.start = state.dataStart = startInput.value;
   state.end = state.dataEnd = endInput.value;
+  state.historyStart = meta.history_start ? Date.parse(meta.history_start) : lo.getTime();
 
+  const upcoming = state.rows.filter((r) => iso(r.begin) >= state.dataStart).length;
   const when = meta.generated_at ? new Date(meta.generated_at).toUTCString().replace(":00 GMT", " UTC") : null;
   document.getElementById("meta").textContent =
-    `${state.rows.length.toLocaleString()} planned passes` + (when ? ` · updated ${when}` : "");
+    `${upcoming.toLocaleString()} planned passes` + (when ? ` · updated ${when}` : "");
   render();
 }
 
@@ -546,6 +581,9 @@ function buildDetail(r) {
 function render() {
   writeHash();
   document.getElementById("copy-link").disabled = !state.aoi;
+  const runBtn = document.getElementById("drcs-run");
+  runBtn.disabled = !state.aoi;
+  runBtn.title = state.aoi ? "Search OPERA products and compare with post-event passes" : "Set an area of interest first";
   const found = matches();
   passLayer.clearLayers();
   state.selected = null;
@@ -778,6 +816,7 @@ function setAOI(layer, geojson, { fit = false, token = null, name = null } = {})
   state.hits = new Map();
   state.coverage = new Map();
   state.aoiArea = turf.area(state.aoi);
+  resetDRCS();
   if (fit) {
     if (geojson.type === "Point") {
       const [lng, lat] = geojson.coordinates;
@@ -1021,6 +1060,7 @@ function clearAOI() {
   stopDrawing();
   if (state.aoiLayer) state.aoiLayer.remove();
   state.aoi = state.aoiLayer = state.aoiToken = state.aoiName = null;
+  resetDRCS();
 }
 document.getElementById("clear-aoi").addEventListener("click", () => {
   clearAOI();
@@ -1121,6 +1161,7 @@ async function writeHash() {
     parts.push(`s=${SENSORS.filter((s) => state.enabled.has(s.key)).map((s) => s.key).join(",")}`);
   }
   if (state.start !== state.dataStart || state.end !== state.dataEnd) parts.push(`d=${state.start},${state.end}`);
+  if (drcs.event != null && state.aoi) parts.push(`ev=${new Date(drcs.event).toISOString().slice(0, 16)}`);
   history.replaceState(null, "", parts.length ? `#${parts.join("&")}` : location.pathname + location.search);
 }
 
@@ -1142,10 +1183,10 @@ function sharedDates(param) {
   const m = /^(\d{4}-\d{2}-\d{2}),(\d{4}-\d{2}-\d{2})$/.exec(param);
   if (!m) return { ...full, note: "Ignored invalid shared dates." };
   const [s, e] = m[1] <= m[2] ? [m[1], m[2]] : [m[2], m[1]];
-  if (e < state.dataStart || s > state.dataEnd) {
+  if (e < state.dataMin || s > state.dataEnd) {
     return { ...full, note: `Shared dates ${s} → ${e} are outside the current data window; showing ${full.start} → ${full.end}.` };
   }
-  const start = s < state.dataStart ? state.dataStart : s;
+  const start = s < state.dataMin ? state.dataMin : s;
   const end = e > state.dataEnd ? state.dataEnd : e;
   const trimmed = start !== s || end !== e;
   return { start, end, note: trimmed ? `Shared dates ${s} → ${e} trimmed to the data window (${start} → ${end}).` : "" };
@@ -1179,6 +1220,12 @@ async function applyHash(hash) {
   }
   if (dates.note) notes.push(dates.note);
   aoiMessage(notes.join(" "), isError);
+
+  const ev = params.ev ? parseEventInput(params.ev) : NaN;
+  drcs.event = Number.isFinite(ev) ? ev : null;
+  drcsInput.value = drcs.event == null ? "" : params.ev;
+  if (params.ev) setDRCSOpen(true);
+  if (params.ev && drcs.event == null) drcsMessage("Ignored invalid shared event time.", true);
 }
 
 async function syncFromHash() {
@@ -1186,6 +1233,7 @@ async function syncFromHash() {
   await applyHash(location.hash);
   state.ready = true;
   render();
+  if (drcs.event != null && state.aoi) runDRCS();
 }
 window.addEventListener("hashchange", syncFromHash);
 
@@ -1199,6 +1247,352 @@ copyBtn.addEventListener("click", async () => {
   } catch {
     window.prompt("Copy this link:", location.href);
   }
+});
+
+// DRCS: compare OPERA granules in CMR with post-event passes, as `next-pass -g` does.
+const DRCS_PRODUCTS = [
+  { key: "DSWX-HLS", shortName: "OPERA_L3_DSWX-HLS_V1", label: "DSWx-HLS", sensors: ["sentinel-2", "landsat-8", "landsat-9"], color: "#1f77b4" },
+  { key: "DSWX-S1", shortName: "OPERA_L3_DSWX-S1_V1", label: "DSWx-S1", sensors: ["sentinel-1"], color: "#17becf" },
+  { key: "DIST-ALERT", shortName: "OPERA_L3_DIST-ALERT-HLS_V1", label: "DIST-ALERT-HLS", sensors: ["sentinel-2", "landsat-8", "landsat-9"], color: "#d62728" },
+  { key: "RTC-S1", shortName: "OPERA_L2_RTC-S1_V1", label: "RTC-S1", sensors: ["sentinel-1"], color: "#9467bd" },
+  { key: "CSLC-S1", shortName: "OPERA_L2_CSLC-S1_V1", label: "CSLC-S1", sensors: ["sentinel-1"], color: "#8c564b" },
+];
+const CMR_URL = "https://cmr.earthdata.nasa.gov/search/granules.json";
+const CMR_PAGE = 2000;
+const CMR_MAX_PAGES = 2;
+// One Sentinel-1 repeat cycle: long enough to find each footprint's last pre-event product.
+const DRCS_PRE_EVENT_DAYS = 12;
+const MAX_LATENCY_DAYS = 30;
+const MAX_POPUP_PASSES = 8;
+const HOUR_MS = 3600000;
+
+const drcs = { event: null, controller: null, layer: L.featureGroup().addTo(map), products: [], hidden: new Set() };
+const drcsInput = document.getElementById("drcs-event");
+const drcsRun = document.getElementById("drcs-run");
+const drcsClear = document.getElementById("drcs-clear");
+const drcsBox = document.getElementById("drcs-products");
+// Above the pass footprints (overlayPane, z 400) so DRCS popups win the click.
+map.createPane("drcs").style.zIndex = 450;
+const drcsRenderer = L.canvas({ padding: 0.3, pane: "drcs" });
+
+const escapeHTML = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const utcStamp = (t) => `${new Date(t).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+const nameTime = (s) => Date.parse(s.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"));
+const parseEventInput = (v) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) ? Date.parse(`${v}:00Z`) : NaN);
+
+const drcsSection = document.getElementById("drcs");
+const drcsToggle = document.getElementById("drcs-toggle");
+function setDRCSOpen(open) {
+  drcsSection.classList.toggle("collapsed", !open);
+  drcsToggle.textContent = open ? "Hide" : "Show";
+  drcsToggle.setAttribute("aria-expanded", String(open));
+}
+drcsToggle.addEventListener("click", () => setDRCSOpen(drcsSection.classList.contains("collapsed")));
+
+function drcsMessage(text, isError = false) {
+  const el = document.getElementById("drcs-msg");
+  el.textContent = text;
+  el.hidden = !text;
+  el.classList.toggle("err", isError);
+}
+
+function fmtDuration(ms) {
+  const h = Math.round(ms / HOUR_MS);
+  return h < 48 ? `${h} h` : `${(h / 24).toFixed(1)} days`;
+}
+
+function granuleGeometry(entry) {
+  const ll = (text) => {
+    const n = text.trim().split(/\s+/).map(Number);
+    const ring = [];
+    for (let i = 0; i + 1 < n.length; i += 2) ring.push([n[i + 1], n[i]]);
+    return ring;
+  };
+  if (entry.polygons?.length) {
+    const polys = entry.polygons.map((rings) => rings.map(ll));
+    return polys.length === 1 ? { type: "Polygon", coordinates: polys[0] } : { type: "MultiPolygon", coordinates: polys };
+  }
+  if (entry.boxes?.length) {
+    const [s, w, n, e] = entry.boxes[0].trim().split(/\s+/).map(Number);
+    return turf.bboxPolygon([w, s, e, n]).geometry;
+  }
+  return null;
+}
+
+// OPERA names are OPERA_<level>_<product>_<tile or burst>_<acquired>_<produced>_...
+function parseGranule(entry) {
+  const parts = entry.title.split("_");
+  const geometry = granuleGeometry(entry);
+  if (parts.length < 6 || !geometry) return null;
+  const acquired = Date.parse(entry.time_start) || nameTime(parts[4]);
+  const produced = nameTime(parts[5]);
+  const link = (entry.links || []).find((l) => l.rel?.endsWith("/data#") && l.href?.startsWith("https://"));
+  // Burst IDs (T077-163349-IW1) pin a Sentinel-1 relative orbit; only that track re-images the burst.
+  const burst = /^T(\d{3})-\d+-IW\d$/.exec(parts[3]);
+  return { name: entry.title, tile: parts[3], track: burst ? Number(burst[1]) : null, acquired, produced, geometry, url: link?.href || null };
+}
+
+function cmrQuery(shortName, t0, t1) {
+  const q = new URLSearchParams({
+    short_name: shortName,
+    temporal: `${new Date(t0).toISOString()},${new Date(t1).toISOString()}`,
+    sort_key: "-start_date",
+    page_size: String(CMR_PAGE),
+  });
+  if (state.aoi.type === "Point") {
+    q.set("point", state.aoi.coordinates.join(","));
+  } else {
+    const boxes = polygonsOf(state.aoi).map((p) => turf.bbox(turf.polygon(p)));
+    boxes.forEach((b) => q.append("bounding_box[]", b.join(",")));
+    if (boxes.length > 1) q.set("options[bounding_box][or]", "true");
+  }
+  return `${CMR_URL}?${q}`;
+}
+
+async function fetchGranules(product, t0, t1, signal) {
+  const url = cmrQuery(product.shortName, t0, t1);
+  const entries = [];
+  let after = null;
+  let hits = 0;
+  for (let page = 0; page < CMR_MAX_PAGES; page++) {
+    const res = await fetch(url, { signal, headers: after ? { "CMR-Search-After": after } : {} });
+    if (!res.ok) throw new Error(`CMR returned ${res.status}`);
+    hits = Number(res.headers.get("CMR-Hits")) || 0;
+    const batch = (await res.json()).feed?.entry || [];
+    entries.push(...batch);
+    after = res.headers.get("CMR-Search-After");
+    if (!after || batch.length < CMR_PAGE) break;
+  }
+  return { granules: entries.map(parseGranule).filter(Boolean), truncated: hits > entries.length, hits };
+}
+
+function aoiPart(geometry) {
+  if (state.aoi.type === "Point") return state.aoi;
+  try {
+    return turf.intersect(turf.featureCollection([turf.feature(geometry), turf.feature(state.aoi)]))?.geometry || null;
+  } catch {
+    return geometry;
+  }
+}
+
+function overlapPct(part, pass) {
+  if (part.type === "Point") return 100;
+  try {
+    const inter = turf.intersect(turf.featureCollection([turf.feature(part), turf.feature(pass.geojson)]));
+    return inter ? Math.min(100, (100 * turf.area(inter)) / turf.area(part)) : 0;
+  } catch {
+    return null;
+  }
+}
+
+// Median of recent (production − acquisition) gaps; reprocessed granules are excluded by the cap.
+function medianLatency(granules) {
+  const gaps = granules
+    .map((g) => g.produced - g.acquired)
+    .filter((d) => Number.isFinite(d) && d > 0 && d < MAX_LATENCY_DAYS * 24 * HOUR_MS)
+    .sort((a, b) => a - b);
+  if (!gaps.length) return null;
+  const mid = Math.floor(gaps.length / 2);
+  return { ms: gaps.length % 2 ? gaps[mid] : (gaps[mid - 1] + gaps[mid]) / 2, n: gaps.length };
+}
+
+function postEventPasses(sensors, event) {
+  const [ax0, ay0, ax1, ay1] = turf.bbox(state.aoi);
+  return state.rows.filter((r) => {
+    if (!sensors.includes(r.sensor) || r.begin.getTime() < event) return false;
+    const [x0, y0, x1, y1] = r.bbox;
+    if (x1 < ax0 || x0 > ax1 || y1 < ay0 || y0 > ay1) return false;
+    try { return turf.booleanIntersects(state.aoi, r.geojson); } catch { return false; }
+  }).sort((a, b) => a.begin - b.begin);
+}
+
+function analyzeProduct(product, granules, event) {
+  const latency = medianLatency(granules);
+  const candidates = postEventPasses(product.sensors, event);
+  const byTile = new Map();
+  granules.forEach((g) => {
+    try { if (!turf.booleanIntersects(state.aoi, g.geometry)) return; } catch { return; }
+    if (!byTile.has(g.tile)) byTile.set(g.tile, []);
+    byTile.get(g.tile).push(g);
+  });
+  const footprints = [...byTile.entries()].map(([tile, list]) => {
+    list.sort((a, b) => b.acquired - a.acquired);
+    const post = list.filter((g) => g.acquired >= event);
+    const fp = { tile, latest: list[0], post, available: post.length > 0 };
+    if (!fp.available) {
+      const part = aoiPart(list[0].geometry);
+      const track = list[0].track;
+      fp.passes = part
+        ? candidates
+          .filter((p) => track == null || p.track === track)
+          .filter((p) => { try { return turf.booleanIntersects(part, p.geojson); } catch { return false; } })
+          .map((p) => ({ pass: p, pct: overlapPct(part, p), eta: latency ? p.begin.getTime() + latency.ms : null }))
+          .filter((x) => x.pct == null || x.pct > 0)
+        : [];
+    }
+    return fp;
+  });
+  const now = Date.now();
+  const pending = footprints.filter((f) => !f.available);
+  const nextEtas = pending.map((f) => f.passes.find((x) => x.eta != null && x.eta >= now)?.eta).filter(Boolean);
+  const overdue = pending.filter((f) => f.passes.some((x) => x.eta != null && x.eta < now)).length;
+  return { latency, footprints, nextEta: nextEtas.length ? Math.min(...nextEtas) : null, overdue };
+}
+
+function passStatus(x, now) {
+  if (x.pass.begin.getTime() > now) return "planned";
+  if (x.eta != null && x.eta < now) return "acquired; overdue, not in CMR yet";
+  return "acquired; processing";
+}
+
+function pendingPopup(product, fp, result) {
+  const now = Date.now();
+  const lines = [
+    `<b>${escapeHTML(product.label)} · ${escapeHTML(fp.tile)}</b>`,
+    `<div class="dim">No product after the event yet. Latest: ${utcStamp(fp.latest.acquired)}</div>`,
+  ];
+  if (!fp.passes.length) {
+    lines.push(`<div>No post-event pass over this footprint in the schedule (through ${escapeHTML(state.dataEnd)}).</div>`);
+  } else {
+    const items = fp.passes.slice(0, MAX_POPUP_PASSES).map((x) => {
+      const pct = x.pct == null ? "" : ` · ${x.pct.toFixed(0)}% of AOI part`;
+      const eta = x.eta ? ` → expected ~${utcStamp(x.eta)}` : "";
+      return `<li>${utcStamp(x.pass.begin)}${x.pass.estimated ? " (est.)" : ""} · ${escapeHTML(fmtWhat(x.pass))}${pct}${eta} <span class="dim">(${passStatus(x, now)})</span></li>`;
+    });
+    const more = fp.passes.length > MAX_POPUP_PASSES ? `<div class="dim">+${fp.passes.length - MAX_POPUP_PASSES} more</div>` : "";
+    lines.push(`<div>Post-event passes:</div><ul>${items.join("")}</ul>${more}`);
+  }
+  if (result.latency) lines.push(`<div class="dim">Expected = pass + median latency ${fmtDuration(result.latency.ms)} (${result.latency.n} recent granules).</div>`);
+  return `<div class="drcs-pop">${lines.join("")}</div>`;
+}
+
+function availablePopup(product, fp) {
+  const g = fp.post[0];
+  const link = g.url ? `<div><a href="${escapeHTML(g.url)}" target="_blank" rel="noopener">Download granule</a></div>` : "";
+  return `<div class="drcs-pop"><b>${escapeHTML(g.name)}</b>
+    <div>Acquired ${utcStamp(g.acquired)}${Number.isFinite(g.produced) ? `, produced ${utcStamp(g.produced)}` : ""}</div>
+    <div class="dim">${fp.post.length} post-event granule${fp.post.length > 1 ? "s" : ""} for this footprint.</div>${link}</div>`;
+}
+
+function drawDRCS() {
+  drcs.layer.clearLayers();
+  drcs.products.forEach(({ product, result }) => {
+    if (!result || drcs.hidden.has(product.key)) return;
+    result.footprints.forEach((fp) => {
+      const style = fp.available
+        ? { color: product.color, weight: 1.5, opacity: 0.9, fillColor: product.color, fillOpacity: 0.25 }
+        : { color: "#8a8a8a", weight: 1, opacity: 0.8, dashArray: "4 3", fillColor: "#8a8a8a", fillOpacity: 0.12 };
+      L.geoJSON(fp.available ? fp.post[0].geometry : fp.latest.geometry, { style, renderer: drcsRenderer })
+        .bindPopup(() => (fp.available ? availablePopup(product, fp) : pendingPopup(product, fp, result)), { maxWidth: 520 })
+        .addTo(drcs.layer);
+    });
+  });
+}
+
+function productSummary(entry) {
+  const { result, error, truncated } = entry;
+  if (error) return { text: `Search failed: ${error}`, isError: true };
+  if (!result) return { text: "Searching…" };
+  const fps = result.footprints;
+  if (!fps.length) return { text: "No granules over the AOI in the search window." };
+  const pending = fps.filter((f) => !f.available);
+  const bits = [];
+  if (!pending.length) bits.push("All footprints have a post-event product.");
+  else {
+    if (result.nextEta) bits.push(`Next expected ~${utcStamp(result.nextEta)}.`);
+    if (result.overdue) bits.push(`${result.overdue} acquired post-event but not in CMR yet.`);
+    if (!bits.length) {
+      bits.push(pending.some((f) => f.passes.length)
+        ? "Post-event passes found; no latency estimate."
+        : "No post-event pass in the schedule.");
+    }
+  }
+  let text = bits.join(" ");
+  if (truncated) text += " Large area: only the newest granules were checked.";
+  return { text };
+}
+
+function drawDRCSList() {
+  drcsBox.replaceChildren(...drcs.products.map((entry) => {
+    const { product, result } = entry;
+    const row = document.createElement("label");
+    row.className = "drcs-row";
+    const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: !drcs.hidden.has(product.key) });
+    cb.addEventListener("change", () => {
+      cb.checked ? drcs.hidden.delete(product.key) : drcs.hidden.add(product.key);
+      drawDRCS();
+    });
+    const chip = Object.assign(document.createElement("span"), { className: "chip" });
+    chip.style.background = product.color;
+    const name = Object.assign(document.createElement("span"), { textContent: product.label });
+    const n = Object.assign(document.createElement("span"), { className: "n" });
+    if (result?.footprints.length) {
+      const avail = result.footprints.filter((f) => f.available).length;
+      n.textContent = `${avail}/${result.footprints.length} ready`;
+    }
+    const { text, isError } = productSummary(entry);
+    const eta = Object.assign(document.createElement("span"), { className: `eta${isError ? " err" : ""}`, textContent: text });
+    row.append(cb, chip, name, n, eta);
+    return row;
+  }));
+}
+
+function resetDRCS({ keepEvent = true } = {}) {
+  drcs.controller?.abort();
+  drcs.controller = null;
+  drcs.products = [];
+  drcs.layer.clearLayers();
+  drcsBox.replaceChildren();
+  drcsMessage("");
+  drcsClear.hidden = true;
+  if (!keepEvent) drcs.event = null;
+}
+
+function historyNote(event) {
+  if (state.historyStart == null || event >= state.historyStart) return "";
+  return ` Passes before ${utcStamp(state.historyStart).slice(0, 10)} are not in the schedule, so products from them may be missing from the timeline.`;
+}
+
+async function runDRCS() {
+  const event = parseEventInput(drcsInput.value);
+  if (!state.aoi) return drcsMessage("Set an area of interest first.", true);
+  if (!Number.isFinite(event)) return drcsMessage("Enter the event date and time (UTC).", true);
+  resetDRCS();
+  drcs.event = event;
+  writeHash();
+  const controller = new AbortController();
+  drcs.controller = controller;
+  drcsClear.hidden = false;
+  const now = Date.now();
+  const t0 = Math.min(event, now) - DRCS_PRE_EVENT_DAYS * 24 * HOUR_MS;
+  drcs.products = DRCS_PRODUCTS.map((product) => ({ product, result: null }));
+  drcsMessage(`Searching OPERA products since ${utcStamp(t0).slice(0, 10)}…`);
+  drawDRCSList();
+  await Promise.all(drcs.products.map(async (entry) => {
+    try {
+      const { granules, truncated } = await fetchGranules(entry.product, t0, now, controller.signal);
+      if (controller.signal.aborted) return;
+      entry.truncated = truncated;
+      entry.result = analyzeProduct(entry.product, granules, event);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      entry.error = err.message || "network error";
+    }
+    drawDRCSList();
+    drawDRCS();
+  }));
+  if (controller.signal.aborted) return;
+  const future = event > now ? " The event is in the future, so every footprint is still pending." : "";
+  drcsMessage(`Event ${utcStamp(event)}.${future}${historyNote(event)}`);
+}
+
+document.getElementById("drcs-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  runDRCS();
+});
+drcsClear.addEventListener("click", () => {
+  resetDRCS({ keepEvent: false });
+  writeHash();
 });
 
 const sidebar = document.getElementById("sidebar");
