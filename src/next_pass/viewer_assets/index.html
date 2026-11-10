@@ -191,7 +191,7 @@ button:disabled { opacity: 0.45; cursor: default; border-color: var(--hairline);
 .matches-head button { padding: 3px 10px; font-size: 12.5px; }
 button.active { border-color: var(--ink-2); background: var(--surface); font-weight: 600; }
 #status { color: var(--ink-2); font-size: 12.5px; }
-#results { flex: 1; overflow-y: auto; padding: 6px 8px; }
+#results { flex: 1 0 280px; overflow-y: auto; padding: 6px 8px; }
 .pass {
   display: flex;
   flex-wrap: wrap;
@@ -236,6 +236,9 @@ button.active { border-color: var(--ink-2); background: var(--surface); font-wei
 #aoi-msg, #drcs-msg { color: var(--ink-2); }
 #aoi-msg.err, #drcs-msg.err { color: var(--err); }
 #drcs-products { margin-top: 8px; }
+#drcs .matches-head { margin-bottom: 8px; }
+#drcs.collapsed .matches-head { margin-bottom: 0; }
+#drcs.collapsed #drcs-body { display: none; }
 .drcs-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
 .drcs-row .n { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
 .drcs-row .eta { flex-basis: 100%; margin-left: 40px; color: var(--muted); font-size: 12px; }
@@ -301,8 +304,12 @@ button.active { border-color: var(--ink-2); background: var(--surface); font-wei
       <div id="aoi-msg" class="note" role="status" hidden></div>
       <div class="note">Draw on the map, upload a GeoJSON, KML/KMZ, or zipped Shapefile, or type coordinates in the same order as <code>next-pass -b</code>. Matching passes appear below. Times marked (est.) are local-solar-time estimates: roughly ±40 min for NISAR frames, and up to ±1–2 h for Landsat path swaths. For exact times over your AOI, run the <code>next-pass</code> CLI.</div>
     </section>
-    <section id="drcs">
-      <h2>DRCS map · OPERA products</h2>
+    <section id="drcs" class="collapsed">
+      <div class="matches-head">
+        <h2>DRCS map · OPERA products</h2>
+        <button type="button" id="drcs-toggle" aria-expanded="false" aria-controls="drcs-body">Show</button>
+      </div>
+      <div id="drcs-body">
       <form id="drcs-form" class="coords">
         <input type="datetime-local" id="drcs-event" step="60" aria-label="Event date and time (UTC)">
         <button type="submit" id="drcs-run" disabled title="Set an area of interest first">Run</button>
@@ -311,6 +318,7 @@ button.active { border-color: var(--ink-2); background: var(--surface); font-wei
       <div id="drcs-msg" class="note" role="status" hidden></div>
       <div id="drcs-products"></div>
       <div class="note">Event date and time in UTC, as in <code>next-pass -g</code>. Searches NASA CMR for OPERA products over the AOI. Colored footprints already have a product acquired after the event; gray ones only have pre-event products. Click one to see the post-event passes that will refresh it and when the product is expected.</div>
+      </div>
     </section>
     <section class="matches-head">
       <h2>Matches <span id="status"></span></h2>
@@ -1216,6 +1224,7 @@ async function applyHash(hash) {
   const ev = params.ev ? parseEventInput(params.ev) : NaN;
   drcs.event = Number.isFinite(ev) ? ev : null;
   drcsInput.value = drcs.event == null ? "" : params.ev;
+  if (params.ev) setDRCSOpen(true);
   if (params.ev && drcs.event == null) drcsMessage("Ignored invalid shared event time.", true);
 }
 
@@ -1270,6 +1279,15 @@ const escapeHTML = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", 
 const utcStamp = (t) => `${new Date(t).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 const nameTime = (s) => Date.parse(s.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"));
 const parseEventInput = (v) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) ? Date.parse(`${v}:00Z`) : NaN);
+
+const drcsSection = document.getElementById("drcs");
+const drcsToggle = document.getElementById("drcs-toggle");
+function setDRCSOpen(open) {
+  drcsSection.classList.toggle("collapsed", !open);
+  drcsToggle.textContent = open ? "Hide" : "Show";
+  drcsToggle.setAttribute("aria-expanded", String(open));
+}
+drcsToggle.addEventListener("click", () => setDRCSOpen(drcsSection.classList.contains("collapsed")));
 
 function drcsMessage(text, isError = false) {
   const el = document.getElementById("drcs-msg");
