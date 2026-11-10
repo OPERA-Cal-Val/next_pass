@@ -45,6 +45,20 @@ jobs:
       - name: Build weekly overpass schedule
         run: pixi run next-pass-schedule --days 7 --output site/data/upcoming_passes.parquet
 
+      - name: Validate schedule sources
+        run: |
+          pixi run python - <<'PY'
+          import json
+          from pathlib import Path
+
+          metadata = json.loads(
+              Path("site/data/upcoming_passes.meta.json").read_text(encoding="utf-8")
+          )
+          status = metadata.get("sources", {}).get("landsat")
+          if status != "ok":
+              raise SystemExit(f"Landsat schedule source failed: {status!r}")
+          PY
+
       - name: Assemble site
         run: cp src/next_pass/viewer_assets/index.html site/index.html
 

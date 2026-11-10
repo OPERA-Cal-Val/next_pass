@@ -3,9 +3,32 @@ from __future__ import annotations
 import zipfile
 from datetime import UTC, datetime, timedelta
 
+import pandas as pd
 from tests.helpers import FakeFrame, FakePolygon
 
 import next_pass.nisar_pass as nisar_pass
+
+
+def test_filter_grouped_rows_preserves_dataframe_when_first_row_is_removed():
+    grouped = pd.DataFrame([{"track": 1}, {"track": 2}])
+
+    result = nisar_pass._filter_grouped_rows(
+        grouped,
+        lambda row: None if row["track"] == 1 else row,
+    )
+
+    assert isinstance(result, pd.DataFrame)
+    assert result.to_dict("records") == [{"track": 2}]
+
+
+def test_filter_grouped_rows_preserves_empty_dataframe():
+    grouped = pd.DataFrame([{"track": 1}, {"track": 2}])
+
+    result = nisar_pass._filter_grouped_rows(grouped, lambda row: None)
+
+    assert isinstance(result, pd.DataFrame)
+    assert result.empty
+    assert list(result.columns) == ["track"]
 
 
 class DownloadResponse:

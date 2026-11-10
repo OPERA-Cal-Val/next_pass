@@ -95,6 +95,19 @@ def estimate_nisar_overpass_time(
     return base + timedelta(hours=utc_hour)
 
 
+def _filter_grouped_rows(grouped: pd.DataFrame, filter_row) -> pd.DataFrame:
+    """Apply a row filter without allowing pandas to collapse the result."""
+    filtered_rows = [filter_row(row) for _, row in grouped.iterrows()]
+    return (
+        pd.DataFrame(
+            [row for row in filtered_rows if row is not None],
+            columns=grouped.columns,
+        )
+        .dropna()
+        .reset_index(drop=True)
+    )
+
+
 def download_nisar_plan(url: str, output_path: Path) -> Path:
     """Download the NISAR observation-plan KMZ if needed."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -610,8 +623,7 @@ def next_nisar_pass(
                     return row
                 return None  # Drop row if no valid dates
 
-            grouped = grouped.apply(filter_dates_and_tides, axis=1)
-            grouped = grouped.dropna().reset_index(drop=True)
+            grouped = _filter_grouped_rows(grouped, filter_dates_and_tides)
 
     if step_cb:
         step_cb("Formatting")

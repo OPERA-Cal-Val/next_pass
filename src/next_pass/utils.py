@@ -27,6 +27,7 @@ LOGGER = logging.getLogger("acquisition_utils")
 # Landsat 8/9 cross the equator at 10:12 AM local solar time (descending pass)
 # Source: https://www.usgs.gov/landsat-missions/landsat-8
 LANDSAT_EQUATORIAL_CROSSING_HOUR = 10.2  # 10:12 AM in decimal hours
+LANDSAT_ASCENDING_CROSSING_HOUR = 22.2  # opposite node, 10:12 PM local
 
 # NISAR nodal crossing times (local solar time)
 # Source: https://science.nasa.gov/mission/nisar/mission-overview/

@@ -38,6 +38,9 @@ def test_build_cycle_sequence_and_path_mapping_validate_inputs():
     with pytest.raises(KeyError):
         landsat_pass._build_cycle_sequence({"landsat_8": {"1/1/1970": {"cycle": 99}}})
 
+    with pytest.raises(ValueError, match="contains no usable paths"):
+        landsat_pass._build_mission_cycle_paths({"landsat_8": {}, "landsat_9": {}})
+
 
 def test_load_landsat_schedule_source_prefers_modern(monkeypatch):
     payloads = [
@@ -289,3 +292,17 @@ def test_estimate_landsat_overpass_time_midpacific_boundary():
     assert result.date().isoformat() == "2026-06-27"
     assert result.hour == 23
     assert result.minute == 52
+
+
+def test_estimate_landsat_overpass_time_uses_ascending_node():
+    result = landsat_pass.estimate_landsat_overpass_time(
+        "06/28/2026",
+        0.0,
+        0.0,
+        pass_direction="ascending",
+    )
+
+    assert result.tzinfo == UTC
+    assert result.date().isoformat() == "2026-06-28"
+    assert result.hour == 22
+    assert result.minute == 12
