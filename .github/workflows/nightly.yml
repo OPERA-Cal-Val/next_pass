@@ -33,7 +33,7 @@ jobs:
           EARTHDATA_PASSWORD: ${{ secrets.EARTHDATA_PASSWORD }}
         run: |
           # Run tests that hit real APIs (mark with @pytest.mark.integration)
-          pixi run pytest tests -m integration || true
+          pixi run pytest tests -m integration
 
       - name: Check external service availability
         run: |

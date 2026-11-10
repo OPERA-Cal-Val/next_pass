@@ -11,6 +11,22 @@ from tests.helpers import FakeFrame, FakePolygon
 import next_pass.opera_products as opera_products
 
 
+def _read_metadata_rows(output_file):
+    if zipfile.is_zipfile(output_file):
+        from openpyxl import load_workbook
+
+        worksheet = load_workbook(output_file).active
+        return [[cell.value for cell in row] for row in worksheet.iter_rows()]
+    return json.loads(output_file.read_text(encoding="utf-8"))
+
+
+def test_read_metadata_rows_supports_json_workbook_stub(tmp_path):
+    output_file = tmp_path / "metadata.xlsx"
+    output_file.write_text(json.dumps([["header"], ["value"]]), encoding="utf-8")
+
+    assert _read_metadata_rows(output_file) == [["header"], ["value"]]
+
+
 def test_describe_cloud_cover_thresholds():
     assert "mostly clear" in opera_products.describe_cloud_cover(25)
     assert "partly cloudy" in opera_products.describe_cloud_cover(60)
@@ -189,19 +205,15 @@ def test_export_hls_band_mapping_and_input_granules(mock_fetch_links, tmp_path):
         mock_results, tmp_path, compute_cloudiness=False, include_hls=True
     )
 
-    # Read the generated Excel file to verify mappings
-    from openpyxl import load_workbook
-
-    wb = load_workbook(tmp_path / "opera_products_metadata.xlsx")
-    ws = wb.active
+    rows = _read_metadata_rows(tmp_path / "opera_products_metadata.xlsx")
 
     # Row 2 is S30 (B8A for NIR)
-    assert ws.cell(row=2, column=18).value == "https://fake/B04.tif"  # Red
-    assert ws.cell(row=2, column=21).value == "https://fake/B8A.tif"  # NIR
-    assert ws.cell(row=2, column=22).value == "https://fake/Fmask.tif"
+    assert rows[1][17] == "https://fake/B04.tif"  # Red
+    assert rows[1][20] == "https://fake/B8A.tif"  # NIR
+    assert rows[1][21] == "https://fake/Fmask.tif"
 
     # Row 3 is L30 (B05 for NIR)
-    assert ws.cell(row=3, column=21).value == "https://fake/B05.tif"  # NIR for Landsat
+    assert rows[2][20] == "https://fake/B05.tif"  # NIR for Landsat
 
 
 @patch("next_pass.opera_products.earthaccess.search_data")
@@ -246,11 +258,6 @@ def test_export_hls_fallback_cmr_search(mock_cmr_search, tmp_path):
     assert kwargs["temporal"] == ("2023-01-01T00:00:00", "2023-01-01T23:59:59")
 
     # Verify the fallback successfully mapped the data
-    from openpyxl import load_workbook
-
-    wb = load_workbook(tmp_path / "opera_products_metadata.xlsx")
-    ws = wb.active
-    assert (
-        ws.cell(row=2, column=17).value == "HLS.S30.T11SLT.123"
-    )  # Extracted Fallback ID
-    assert ws.cell(row=2, column=18).value == "https://fallback/B04.tif"
+    rows = _read_metadata_rows(tmp_path / "opera_products_metadata.xlsx")
+    assert rows[1][16] == "HLS.S30.T11SLT.123"  # Extracted fallback ID
+    assert rows[1][17] == "https://fallback/B04.tif"
