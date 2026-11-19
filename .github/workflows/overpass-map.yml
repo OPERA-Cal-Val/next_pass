@@ -43,7 +43,7 @@ jobs:
         run: pixi install --locked -e default
 
       - name: Build weekly overpass schedule
-        run: pixi run next-pass-schedule --days 7 --output site/data/upcoming_passes.parquet
+        run: pixi run next-pass-schedule --days 7 --days-back 14 --output site/data/upcoming_passes.parquet
 
       - name: Validate schedule sources
         run: |

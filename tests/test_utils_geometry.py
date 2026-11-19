@@ -171,6 +171,9 @@ def test_scrape_esa_download_urls_normalizes_malformed_links(monkeypatch):
           <div class='sentinel-1a'>
             <a href='https://sentinel/path-1.kml'>one</a>
             <a href='/path-2.kml'>two</a>
+            <a href='https://documents/d/sentinel/s1d_mp_user_x'>three</a>
+            <a href='https://sentinels.copernicus.eu/documents/d/sentinel/y'>four</a>
+            <a href='/documents/d/sentinel/z?download=true'>five</a>
           </div>
         </html>
         """
@@ -191,6 +194,9 @@ def test_scrape_esa_download_urls_normalizes_malformed_links(monkeypatch):
     assert urls == [
         "https://sentinels.copernicus.eu/path-1.kml",
         "https://sentinels.copernicus.eu/path-2.kml",
+        "https://sentinels.copernicus.eu/documents/d/sentinel/s1d_mp_user_x",
+        "https://sentinels.copernicus.eu/documents/d/sentinel/y",
+        "https://sentinels.copernicus.eu/documents/d/sentinel/z?download=true",
     ]
     assert calls == [
         ("https://example.com", {"timeout": utils_mod.ESA_REQUEST_TIMEOUT})
